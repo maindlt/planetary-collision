@@ -1,0 +1,15 @@
+.DS_Store
+
+# C build products
+*.o
+/src/spheres_ini/spheres_ini
+
+# Generated initial-condition data
+*.SEAGen
+impact.*
+*.structure
+
+# Python caches and environments
+__pycache__/
+*.py[cod]
+.venv/

@@ -56,3 +56,21 @@ https://arxiv.org/abs/1710.03669
 
 Please cite this article when using our program.
 
+
+SEAGen setup for spherical-shell particle arrangements:
+
+    1. Install the pinned Python dependencies into this directory's local 'SEAGen/' folder. With uv:
+
+       uv pip install --python python3.14 --target SEAGen --no-binary seagen -r requirements-seagen.txt
+
+       The '--no-binary seagen' option is currently required because the published SEAGen 1.6 wheel is malformed.
+
+    2. Build spheres_ini against the same Python version.
+
+    3. Run with '-G 2' and pass this source directory through '-S'. For hydrostatic structures, also pass '-H'.
+
+The local 'SEAGen/' dependency directory is generated and must not be committed.
+
+SEAGen preserves complete particle shells at material boundaries, so the final particle count can differ noticeably from the requested approximate count, especially for low-resolution differentiated bodies. Always record and inspect the actual count reported by spheres_ini.
+
+The repository-level 'scripts/generate_initial_conditions.py' program and 'examples/initial_conditions_sweep.json' provide a JSON-driven workflow for generating sets of hydrostatic, spherical-shell, hydrodynamic initial conditions.

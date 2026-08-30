@@ -13,3 +13,5 @@ impact.*
 __pycache__/
 *.py[cod]
 .venv/
+/src/spheres_ini/SEAGen/
+/runs/

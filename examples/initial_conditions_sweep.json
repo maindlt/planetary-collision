@@ -1,0 +1,47 @@
+{
+  "paths": {
+    "spheres_ini_executable": "../src/spheres_ini/spheres_ini",
+    "spheres_ini_source": "../src/spheres_ini",
+    "material_file": "../src/spheres_ini/material_iron_basalt.cfg",
+    "output_directory": "../runs/example_hydro_sweep"
+  },
+  "execution": {
+    "max_cases": 100
+  },
+  "parameters": {
+    "m_tot_kg": {
+      "mode": "constant",
+      "value": 1.886e21
+    },
+    "gamma": {
+      "mode": "list",
+      "values": [0.1, 0.5, 1.0]
+    },
+    "zeta_iron": {
+      "mode": "constant",
+      "value": 0.25
+    },
+    "v_imp_over_v_esc": {
+      "mode": "log",
+      "minimum": 1.0,
+      "maximum": 8.0,
+      "count": 5
+    },
+    "impact_angle_deg": {
+      "mode": "list",
+      "values": [0, 30, 45, 60]
+    },
+    "f_i": {
+      "mode": "constant",
+      "value": 5
+    },
+    "f_t": {
+      "mode": "constant",
+      "value": 50
+    },
+    "n_tot": {
+      "mode": "constant",
+      "value": 100000
+    }
+  }
+}

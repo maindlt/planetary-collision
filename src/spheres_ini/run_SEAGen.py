@@ -7,35 +7,28 @@ The particles are approximately equidistant and thus have approximately equal "v
 """
 
 
-try:
-    import sys
-    import numpy as np
-    import traceback
-    import argparse
-except Exception as e:
-    print("ERROR! Cannot properly import Python modules in 'run_SEAGen.py'. Exiting ...")
-    print(str(type(e).__name__))
-    traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1)
+import argparse
+import sys
+import traceback
 
 
 parser = argparse.ArgumentParser(description="Script to run SEAGen to create a sphere of approx. equidistant particles arranged in spherical shells.")
-parser.add_argument("--SEAGen_dir", help = "specify directory containing SEAGen module 'seagen.py'", type = str, metavar = "")
-parser.add_argument("--N_des", help = "specify desired particle number in the sphere", type = int, metavar = "")
-parser.add_argument("--R_total", help = "specify total radius of sphere", type = float, metavar = "")
-parser.add_argument("--R_core", help = "specify core radius of sphere", type = float, metavar = "")
-parser.add_argument("--R_mantle", help = "specify mantle radius of sphere", type = float, metavar = "")
+parser.add_argument("--SEAGen_dir", help = "specify directory containing SEAGen and NumPy", type = str, metavar = "", required = True)
+parser.add_argument("--N_des", help = "specify desired particle number in the sphere", type = int, metavar = "", required = True)
+parser.add_argument("--R_total", help = "specify total radius of sphere", type = float, metavar = "", required = True)
+parser.add_argument("--R_core", help = "specify core radius of sphere", type = float, metavar = "", required = True)
+parser.add_argument("--R_mantle", help = "specify mantle radius of sphere", type = float, metavar = "", required = True)
 parser.add_argument("--outfile", help = "specify output file, where the first 3 lines are comments and start with '#' (the first line contains the total particle number after '# '), followed by lines with  1.x  2.y  3.z  4.mat-type  5.radius  6.density  7.mass, default is 'particles.txt'", type = str, metavar = "", default = "particles.txt")
 parser.add_argument("-v", help= "be verbose" , action='store_true')
 args = parser.parse_args()
 
 
 try:
-    sys.path.append(args.SEAGen_dir)
+    sys.path.insert(0, args.SEAGen_dir)
+    import numpy as np
     import seagen
 except Exception as e:
-    print("ERROR! Cannot properly import SEAGen module in 'run_SEAGen.py'. Exiting ...")
+    print("ERROR! Cannot import SEAGen and NumPy from the configured dependency directory. Exiting ...")
     print(str(type(e).__name__))
     traceback.print_exc()
     sys.stdout.flush()
@@ -90,10 +83,13 @@ if len(mat_types) != len(radii):
     sys.exit(1)
 
 # run SEAGen
-if args.v:
-    particles = seagen.GenSphere(N_picle_des = args.N_des, A1_r_prof = radii, A1_rho_prof = densities, A1_mat_prof = mat_types, verb=1)
-else:
-    particles = seagen.GenSphere(N_picle_des = args.N_des, A1_r_prof = radii, A1_rho_prof = densities, A1_mat_prof = mat_types, verb=0)
+particles = seagen.GenSphere(
+    N_picle_des = args.N_des,
+    A1_r_prof = radii,
+    A1_rho_prof = densities,
+    A1_mat_prof = mat_types,
+    verbosity = 1 if args.v else 0,
+)
 
 # write particles to output file
 ofl=open(args.outfile, "w")
@@ -118,4 +114,3 @@ if args.v:
 #print("\n\nradii = {0}\ndensities = {1}\nmat_types = {2}".format(radii, densities, mat_types) )
 #print("\nrho_min = {0:g}\nrho_max = {1:g}\nrho_mean = {2:g}\nrho_median = {3:g}\nrho_std.dev. = {4:g}".format(np.amin(particles.rho), np.amax(particles.rho), np.mean(particles.rho), np.median(particles.rho), np.std(particles.rho) ) )
 #print("\nmass_min = {0:g}\nmass_max = {1:g}\nmass_mean = {2:g}\nmass_median = {3:g}\nmass_std.dev. = {4:g}\n".format(np.amin(particles.m), np.amax(particles.m), np.mean(particles.m), np.median(particles.m), np.std(particles.m) ) )
-

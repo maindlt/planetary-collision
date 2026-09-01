@@ -9,6 +9,7 @@ from scripts.generate_initial_conditions import (
     _validate_miluphcuda_config,
     expand_cases,
     expand_parameter,
+    render_case_table,
     render_spheres_input,
 )
 
@@ -72,6 +73,31 @@ class InputRenderingTests(unittest.TestCase):
         self.assertIn("shell_proj = 0\n", rendered)
         self.assertIn("weibull_core = 0\n", rendered)
         self.assertNotIn("\n\n", rendered)
+
+    def test_case_table_maps_parameters_to_case_directories(self):
+        records = [
+            {
+                "case_name": "case_00001_abc123",
+                "parameters": {
+                    "m_tot_kg": 1.886e21,
+                    "gamma": 0.5,
+                    "zeta_iron": 0.25,
+                    "v_imp_over_v_esc": 1.5,
+                    "impact_angle_deg": 30.0,
+                    "f_i": 5.0,
+                    "f_t": 50.0,
+                    "n_tot": 100000.0,
+                },
+            }
+        ]
+        table = render_case_table(records)
+        lines = table.splitlines()
+        self.assertIn("case_directory", lines[0])
+        self.assertIn("m_tot_kg", lines[0])
+        self.assertIn("impact_angle_deg", lines[0])
+        self.assertIn("case_00001_abc123", lines[2])
+        self.assertIn("1.886e+21", lines[2])
+        self.assertIn("100000", lines[2])
 
 
 class ExecutionMetadataTests(unittest.TestCase):

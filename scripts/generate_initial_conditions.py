@@ -428,6 +428,33 @@ def _case_records(cases: Iterable[dict[str, float]]) -> list[dict[str, Any]]:
     return records
 
 
+def render_case_table(records: Iterable[dict[str, Any]]) -> str:
+    headers = ("case_directory", *PARAMETER_NAMES)
+    rows = []
+    for record in records:
+        parameters = record["parameters"]
+        values = [record["case_name"]]
+        for name in PARAMETER_NAMES:
+            value = parameters[name]
+            values.append(
+                str(int(value)) if name == "n_tot" else format(value, ".16g")
+            )
+        rows.append(values)
+
+    widths = [
+        max(len(header), *(len(row[index]) for row in rows))
+        for index, header in enumerate(headers)
+    ]
+
+    def render_row(values: Iterable[str]) -> str:
+        return " | ".join(
+            value.ljust(widths[index]) for index, value in enumerate(values)
+        ).rstrip()
+
+    separator = "-+-".join("-" * width for width in widths)
+    return "\n".join([render_row(headers), separator, *(render_row(row) for row in rows)]) + "\n"
+
+
 def execute(config_path: Path, dry_run: bool = False) -> int:
     config, cases = load_configuration(config_path)
     paths = config["resolved_paths"]
@@ -461,9 +488,11 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
             **config["execution"]["miluphcuda"],
         },
         "case_count": len(records),
+        "case_table_file": "case_table.txt",
         "cases": [],
     }
     manifest_path = output_directory / "manifest.json"
+    (output_directory / "case_table.txt").write_text(render_case_table(records))
     _write_json_atomic(manifest_path, manifest)
 
     for index, record in enumerate(records, start=1):

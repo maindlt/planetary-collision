@@ -86,7 +86,7 @@ Each case directory contains:
 - standard-output and standard-error logs;
 - `case.json` with requested parameters, exact `spheres_ini` command, planned `miluphcuda` command, actual particle counts, radii, masses, velocities, and derived timing.
 
-The top-level `manifest.json` accumulates the status and metadata for the entire sweep. It is updated after every completed case.
+The top-level `manifest.json` accumulates the status and metadata for the entire sweep. It is updated after every completed case. Beside it, `case_table.txt` provides a fixed-width ASCII table mapping every case directory to its eight requested parameter values. The complete table is written before particle generation starts, so it remains a useful index if a later case fails.
 
 SEAGen keeps material-boundary shells intact, so `n_tot` is approximate. The requested and actual particle counts are both recorded. The end time stored in the metadata is
 

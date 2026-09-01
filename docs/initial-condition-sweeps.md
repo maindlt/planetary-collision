@@ -4,7 +4,7 @@
 
 - hydrostatic radial structures (`-H`);
 - SEAGen spherical-shell placement (`-G 2`);
-- `miluphcuda` hydro output (`-O 0`);
+- `miluphcuda` hydro output without a density column (`-O 3`);
 - no solid-body stress fields and no fragmentation or Weibull flaws;
 - identical iron-core fractions in projectile and target;
 - basalt mantle fraction `1 - zeta_iron` and no outer shell.
@@ -45,16 +45,46 @@ Each parameter accepts one of four forms:
 
 The program forms the full Cartesian product of all expanded values. `execution.max_cases` is a required guard against accidentally launching an unexpectedly large sweep.
 
+## Planned miluphcuda command
+
+The `execution.miluphcuda` object describes a future simulation command. The generator currently requires `enabled` to be `false`; it will never launch `miluphcuda`. After each initial condition is generated, it prints the planned command and records it in both the case metadata and the top-level manifest.
+
+The `arguments` list is deliberately configurable because available options can depend on how `miluphcuda` was compiled. It supports these placeholders:
+
+- `{case_directory}`
+- `{impact_file}`
+- `{material_file}`
+- `{simulation_end_time_s}`
+- `{n_frames}`
+- `{output_interval_s}`, calculated as `simulation_end_time_s / n_frames`
+
+For example:
+
+```json
+"miluphcuda": {
+  "enabled": false,
+  "executable": "miluphcuda",
+  "n_frames": 100,
+  "arguments": [
+    "-n", "{n_frames}",
+    "-t", "{output_interval_s}",
+    "-f", "{impact_file}",
+    "-m", "{material_file}",
+    "-s", "-g"
+  ]
+}
+```
+
 ## Results and timing
 
 Each case directory contains:
 
-- `impact.0000`, the hydrodynamic SPH particle input;
+- `impact.0000`, the nine-column hydrodynamic SPH particle input without an initial density column;
 - the generated `spheres_ini.input`;
 - a private copy of `material.cfg`, whose smoothing length is updated by `spheres_ini`;
 - `projectile.structure` and `target.structure` hydrostatic profiles;
 - standard-output and standard-error logs;
-- `case.json` with requested parameters, exact command, actual particle counts, radii, masses, velocities, and derived timing.
+- `case.json` with requested parameters, exact `spheres_ini` command, planned `miluphcuda` command, actual particle counts, radii, masses, velocities, and derived timing.
 
 The top-level `manifest.json` accumulates the status and metadata for the entire sweep. It is updated after every completed case.
 
@@ -64,6 +94,6 @@ SEAGen keeps material-boundary shells intact, so `n_tot` is approximate. The req
 T_end = (f_i + f_t) (R_projectile + R_target) / v_impact
 ```
 
-using the actual particle-distribution radii and total particle mass reported by `spheres_ini`. The unrounded hydrostatic profile radii are also retained separately in the case metadata. The program does not round this time or start an SPH evolution; it generates and describes the initial conditions only.
+The collision timescale is parsed from the `spheres_ini` stdout log, and `T_end` uses that reported value directly. A separately recomputed timescale is retained as a diagnostic, together with the particle-distribution radii, total particle mass, and unrounded hydrostatic profile radii. The program does not round the end time or start an SPH evolution; it generates and describes the initial conditions only.
 
 SEAGen currently chooses its shell orientations stochastically. Repeating the same sweep can therefore produce a different particle realization even when all hyperparameters are identical.

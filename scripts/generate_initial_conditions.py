@@ -11,7 +11,9 @@ import math
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
+import string
 import subprocess
 import sys
 from typing import Any, Iterable
@@ -28,6 +30,14 @@ PARAMETER_NAMES = (
     "f_t",
     "n_tot",
 )
+MILUPHCUDA_PLACEHOLDERS = {
+    "case_directory",
+    "impact_file",
+    "material_file",
+    "simulation_end_time_s",
+    "n_frames",
+    "output_interval_s",
+}
 
 
 class ConfigurationError(ValueError):
@@ -211,11 +221,12 @@ def load_configuration(config_path: Path) -> tuple[dict[str, Any], list[dict[str
     }
 
     execution = config["execution"]
-    if not isinstance(execution, dict) or set(execution) != {"max_cases"}:
-        raise ConfigurationError("execution must contain exactly max_cases")
+    if not isinstance(execution, dict) or set(execution) != {"max_cases", "miluphcuda"}:
+        raise ConfigurationError("execution must contain exactly max_cases and miluphcuda")
     max_cases = execution["max_cases"]
     if isinstance(max_cases, bool) or not isinstance(max_cases, int) or max_cases < 1:
         raise ConfigurationError("execution.max_cases must be a positive integer")
+    _validate_miluphcuda_config(execution["miluphcuda"])
 
     cases = expand_cases(config["parameters"])
     if len(cases) > max_cases:
@@ -223,6 +234,49 @@ def load_configuration(config_path: Path) -> tuple[dict[str, Any], list[dict[str
             f"sweep expands to {len(cases)} cases, exceeding max_cases={max_cases}"
         )
     return config, cases
+
+
+def _validate_miluphcuda_config(configuration: Any) -> None:
+    if not isinstance(configuration, dict) or set(configuration) != {
+        "enabled", "executable", "arguments", "n_frames"
+    }:
+        raise ConfigurationError(
+            "execution.miluphcuda must contain exactly enabled, executable, arguments, "
+            "and n_frames"
+        )
+    if configuration["enabled"] is not False:
+        raise ConfigurationError(
+            "execution.miluphcuda.enabled must remain false; this generator only plans the command"
+        )
+    if not isinstance(configuration["executable"], str) or not configuration["executable"]:
+        raise ConfigurationError("execution.miluphcuda.executable must be a non-empty string")
+    arguments = configuration["arguments"]
+    if not isinstance(arguments, list) or not all(
+        isinstance(argument, str) for argument in arguments
+    ):
+        raise ConfigurationError("execution.miluphcuda.arguments must be a list of strings")
+    formatter = string.Formatter()
+    for argument in arguments:
+        try:
+            parsed = formatter.parse(argument)
+            for _, field_name, format_spec, conversion in parsed:
+                if field_name is None:
+                    continue
+                if field_name not in MILUPHCUDA_PLACEHOLDERS:
+                    raise ConfigurationError(
+                        f"unknown miluphcuda argument placeholder: {field_name}"
+                    )
+                if format_spec or conversion:
+                    raise ConfigurationError(
+                        "miluphcuda argument placeholders do not accept conversions or format specs"
+                    )
+        except ValueError as error:
+            raise ConfigurationError(
+                f"invalid execution.miluphcuda argument template: {error}"
+            ) from error
+    n_frames = configuration["n_frames"]
+    if isinstance(n_frames, bool) or not isinstance(n_frames, int) or n_frames < 1:
+        raise ConfigurationError("execution.miluphcuda.n_frames must be a positive integer")
 
 
 def _validate_runtime_paths(paths: dict[str, Path]) -> None:
@@ -267,6 +321,19 @@ def _actual_radii(stdout: str) -> tuple[float, float]:
     return radii[0], radii[1]
 
 
+def _collision_timescale(stdout: str) -> float:
+    match = re.search(
+        r"collision timescale \(R_p\+R_t\)/\|v_imp\|\s*=\s*([0-9.eE+-]+)\s*sec",
+        stdout,
+    )
+    if not match:
+        raise RuntimeError("could not parse spheres_ini collision timescale")
+    timescale = float(match.group(1))
+    if not math.isfinite(timescale) or timescale <= 0:
+        raise RuntimeError("spheres_ini reported an invalid collision timescale")
+    return timescale
+
+
 def _outer_radius(path: Path) -> float:
     radius = None
     for line in path.read_text().splitlines():
@@ -303,7 +370,8 @@ def _derived_metadata(case: dict[str, float], case_directory: Path, stdout: str)
     combined_radius = projectile_radius + target_radius
     mutual_escape_velocity = math.sqrt(2 * G_SI * actual_mass / combined_radius)
     impact_velocity = case["v_imp_over_v_esc"] * mutual_escape_velocity
-    collision_timescale = combined_radius / impact_velocity
+    collision_timescale_recomputed = combined_radius / impact_velocity
+    collision_timescale = _collision_timescale(stdout)
     return {
         "n_projectile_actual": projectile_count,
         "n_target_actual": target_count,
@@ -316,7 +384,39 @@ def _derived_metadata(case: dict[str, float], case_directory: Path, stdout: str)
         "mutual_escape_velocity_m_per_s": mutual_escape_velocity,
         "impact_velocity_m_per_s": impact_velocity,
         "collision_timescale_s": collision_timescale,
+        "collision_timescale_source": "spheres_ini stdout log",
+        "collision_timescale_recomputed_s": collision_timescale_recomputed,
         "simulation_end_time_s": (case["f_i"] + case["f_t"]) * collision_timescale,
+    }
+
+
+def _planned_miluphcuda(
+    configuration: dict[str, Any], case_directory: Path, simulation_end_time: float
+) -> dict[str, Any]:
+    n_frames = configuration["n_frames"]
+    substitutions = {
+        "case_directory": str(case_directory),
+        "impact_file": str(case_directory / "impact.0000"),
+        "material_file": str(case_directory / "material.cfg"),
+        "simulation_end_time_s": format(simulation_end_time, ".16g"),
+        "n_frames": str(n_frames),
+        "output_interval_s": format(simulation_end_time / n_frames, ".16g"),
+    }
+    try:
+        arguments = [
+            argument.format_map(substitutions) for argument in configuration["arguments"]
+        ]
+    except (KeyError, ValueError) as error:
+        raise ConfigurationError(
+            f"invalid placeholder in execution.miluphcuda.arguments: {error}"
+        ) from error
+    command = [configuration["executable"], *arguments]
+    return {
+        "status": "planned_not_executed",
+        "enabled": False,
+        "n_frames": n_frames,
+        "command": command,
+        "command_text": shlex.join(command),
     }
 
 
@@ -350,9 +450,15 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
         "mode": {
             "hydrostatic_structure": True,
             "particle_geometry": "SEAGen spherical shells",
-            "output": "miluphcuda hydro",
+            "output": "miluphcuda hydro without density column",
+            "spheres_ini_output_mode": 3,
+            "density_column": False,
             "solid_mechanics": False,
             "fragmentation_damage": False,
+        },
+        "miluphcuda": {
+            "status": "planning_only",
+            **config["execution"]["miluphcuda"],
         },
         "case_count": len(records),
         "cases": [],
@@ -370,7 +476,7 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
             str(paths["spheres_ini_executable"]),
             "-H",
             "-G", "2",
-            "-O", "0",
+            "-O", "3",
             "-S", str(paths["spheres_ini_source"]),
             "-f", "spheres_ini.input",
             "-m", "material.cfg",
@@ -402,6 +508,13 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
             )
         result["status"] = "complete"
         result["derived"] = _derived_metadata(case, case_directory, completed.stdout)
+        result["miluphcuda"] = _planned_miluphcuda(
+            config["execution"]["miluphcuda"],
+            case_directory,
+            result["derived"]["simulation_end_time_s"],
+        )
+        print("miluphcuda execution disabled; would invoke:", flush=True)
+        print(result["miluphcuda"]["command_text"], flush=True)
         _write_json_atomic(case_directory / "case.json", result)
         manifest["cases"].append(result)
         _write_json_atomic(manifest_path, manifest)

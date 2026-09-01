@@ -6,7 +6,24 @@
     "output_directory": "../runs/example_hydro_sweep"
   },
   "execution": {
-    "max_cases": 100
+    "max_cases": 100,
+    "miluphcuda": {
+      "enabled": false,
+      "executable": "miluphcuda",
+      "n_frames": 100,
+      "arguments": [
+        "-v",
+        "-I", "rk2_adaptive",
+        "-Q", "1e-4",
+        "-n", "{n_frames}",
+        "-a", "0.5",
+        "-t", "{output_interval_s}",
+        "-f", "{impact_file}",
+        "-m", "{material_file}",
+        "-s",
+        "-g"
+      ]
+    }
   },
   "parameters": {
     "m_tot_kg": {

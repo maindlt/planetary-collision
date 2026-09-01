@@ -1,8 +1,12 @@
 import math
+from pathlib import Path
 import unittest
 
 from scripts.generate_initial_conditions import (
     ConfigurationError,
+    _collision_timescale,
+    _planned_miluphcuda,
+    _validate_miluphcuda_config,
     expand_cases,
     expand_parameter,
     render_spheres_input,
@@ -68,6 +72,42 @@ class InputRenderingTests(unittest.TestCase):
         self.assertIn("shell_proj = 0\n", rendered)
         self.assertIn("weibull_core = 0\n", rendered)
         self.assertNotIn("\n\n", rendered)
+
+
+class ExecutionMetadataTests(unittest.TestCase):
+    def test_collision_timescale_comes_from_spheres_ini_output(self):
+        stdout = "        collision timescale (R_p+R_t)/|v_imp| = 952.399 sec\n"
+        self.assertEqual(_collision_timescale(stdout), 952.399)
+
+    def test_planned_miluphcuda_command_is_never_enabled(self):
+        configuration = {
+            "enabled": False,
+            "executable": "miluphcuda_future",
+            "n_frames": 10,
+            "arguments": [
+                "-n", "{n_frames}", "-t", "{output_interval_s}",
+                "-f", "{impact_file}", "-m", "{material_file}",
+            ],
+        }
+        _validate_miluphcuda_config(configuration)
+        planned = _planned_miluphcuda(configuration, Path("/tmp/case"), 100.0)
+        self.assertEqual(planned["status"], "planned_not_executed")
+        self.assertEqual(planned["command"][0], "miluphcuda_future")
+        self.assertIn("10", planned["command"])
+        self.assertIn("/tmp/case/impact.0000", planned["command"])
+        configuration["enabled"] = True
+        with self.assertRaisesRegex(ConfigurationError, "must remain false"):
+            _validate_miluphcuda_config(configuration)
+
+    def test_unknown_planned_command_placeholder_is_rejected(self):
+        configuration = {
+            "enabled": False,
+            "executable": "miluphcuda",
+            "n_frames": 10,
+            "arguments": ["{unsupported}"],
+        }
+        with self.assertRaisesRegex(ConfigurationError, "unknown.*placeholder"):
+            _validate_miluphcuda_config(configuration)
 
 
 if __name__ == "__main__":

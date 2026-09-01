@@ -25,7 +25,7 @@ The existing macOS Makefile uses GCC, OpenMP, Python embedding headers/libraries
 
 - `scripts/generate_initial_conditions.py` expands the JSON grid in `examples/initial_conditions_sweep.json` and runs cases sequentially.
 - Paths in a sweep configuration are relative to the JSON file. The output directory must not exist before a real run.
-- The driver always calls `spheres_ini` with `-H -G 2 -O 3`: hydrostatic profiles, SEAGen shells, and nine-column hydrodynamic `miluphcuda` output without an initial density column. It does not expose solid or fragmentation modes.
+- The driver always calls `spheres_ini` with `-H -G 2 -O 0`: hydrostatic profiles, SEAGen shells, and ten-column hydrodynamic `miluphcuda` output including the initial SPH density column. It does not expose solid or fragmentation modes.
 - Each run receives a copy of the source material file. Per-case and top-level JSON manifests record actual counts, the collision timescale parsed from the `spheres_ini` log, and derived timing.
 - The sweep root contains `case_table.txt`, a fixed-width mapping from all planned case-directory names to their requested input parameters. It is written before case execution.
 - `execution.miluphcuda` is planning-only and must have `enabled: false`. Its editable argument template is rendered per case, printed, and stored in both case and sweep metadata; it is never executed.

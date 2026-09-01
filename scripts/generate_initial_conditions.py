@@ -20,6 +20,7 @@ from typing import Any, Iterable
 
 
 G_SI = 6.6741e-11
+SPHERES_INI_OUTPUT_MODE = 0
 PARAMETER_NAMES = (
     "m_tot_kg",
     "gamma",
@@ -477,9 +478,9 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
         "mode": {
             "hydrostatic_structure": True,
             "particle_geometry": "SEAGen spherical shells",
-            "output": "miluphcuda hydro without density column",
-            "spheres_ini_output_mode": 3,
-            "density_column": False,
+            "output": "miluphcuda hydro with density column",
+            "spheres_ini_output_mode": SPHERES_INI_OUTPUT_MODE,
+            "density_column": True,
             "solid_mechanics": False,
             "fragmentation_damage": False,
         },
@@ -505,7 +506,7 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
             str(paths["spheres_ini_executable"]),
             "-H",
             "-G", "2",
-            "-O", "3",
+            "-O", str(SPHERES_INI_OUTPUT_MODE),
             "-S", str(paths["spheres_ini_source"]),
             "-f", "spheres_ini.input",
             "-m", "material.cfg",

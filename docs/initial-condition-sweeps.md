@@ -4,7 +4,7 @@
 
 - hydrostatic radial structures (`-H`);
 - SEAGen spherical-shell placement (`-G 2`);
-- `miluphcuda` hydro output without a density column (`-O 3`);
+- `miluphcuda` hydro output including the initial SPH density column (`-O 0`);
 - no solid-body stress fields and no fragmentation or Weibull flaws;
 - identical iron-core fractions in projectile and target;
 - basalt mantle fraction `1 - zeta_iron` and no outer shell.
@@ -79,7 +79,7 @@ For example:
 
 Each case directory contains:
 
-- `impact.0000`, the nine-column hydrodynamic SPH particle input without an initial density column;
+- `impact.0000`, the ten-column hydrodynamic SPH particle input including density;
 - the generated `spheres_ini.input`;
 - a private copy of `material.cfg`, whose smoothing length is updated by `spheres_ini`;
 - `projectile.structure` and `target.structure` hydrostatic profiles;

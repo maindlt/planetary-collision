@@ -4,6 +4,7 @@ import unittest
 
 from scripts.generate_initial_conditions import (
     ConfigurationError,
+    SPHERES_INI_OUTPUT_MODE,
     _collision_timescale,
     _planned_miluphcuda,
     _validate_miluphcuda_config,
@@ -53,6 +54,9 @@ class ParameterExpansionTests(unittest.TestCase):
 
 
 class InputRenderingTests(unittest.TestCase):
+    def test_output_mode_is_hydro_with_density(self):
+        self.assertEqual(SPHERES_INI_OUTPUT_MODE, 0)
+
     def test_hydro_material_and_damage_settings(self):
         case = {
             "m_tot_kg": 1.2e21,

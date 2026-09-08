@@ -24,6 +24,7 @@ The existing macOS Makefile uses GCC, OpenMP, Python embedding headers/libraries
 ## Initial-condition sweep workflow
 
 - `scripts/generate_initial_conditions.py` expands the JSON grid in `examples/initial_conditions_sweep.json` and runs cases sequentially.
+- Its `--silent` option suppresses driver output and handled error messages while preserving per-case `spheres_ini` logs and failure exit status.
 - Paths in a sweep configuration are relative to the JSON file. The output directory must not exist before a real run.
 - The driver always calls `spheres_ini` with `-H -G 2 -O 0`: hydrostatic profiles, SEAGen shells, and ten-column hydrodynamic `miluphcuda` output including the initial SPH density column. It does not expose solid or fragmentation modes.
 - Each run receives a copy of the source material file. Per-case and top-level JSON manifests record actual counts, the collision timescale parsed from the `spheres_ini` log, and derived timing.

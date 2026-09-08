@@ -471,16 +471,17 @@ def render_case_table(records: Iterable[dict[str, Any]]) -> str:
     return "\n".join([render_row(headers), separator, *(render_row(row) for row in rows)]) + "\n"
 
 
-def execute(config_path: Path, dry_run: bool = False) -> int:
+def execute(config_path: Path, dry_run: bool = False, silent: bool = False) -> int:
     config, cases = load_configuration(config_path)
     paths = config["resolved_paths"]
     _validate_runtime_paths(paths)
     records = _case_records(cases)
 
     if dry_run:
-        print(f"Validated {len(records)} hydrostatic SPH case(s).")
-        for record in records:
-            print(record["case_name"], json.dumps(record["parameters"], sort_keys=True))
+        if not silent:
+            print(f"Validated {len(records)} hydrostatic SPH case(s).")
+            for record in records:
+                print(record["case_name"], json.dumps(record["parameters"], sort_keys=True))
         return 0
 
     output_directory = paths["output_directory"]
@@ -528,7 +529,8 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
             "-m", "material.cfg",
             "-o", "impact.0000",
         ]
-        print(f"[{index}/{len(records)}] {record['case_name']}", flush=True)
+        if not silent:
+            print(f"[{index}/{len(records)}] {record['case_name']}", flush=True)
         completed = subprocess.run(
             command,
             cwd=case_directory,
@@ -559,11 +561,12 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
             result["derived"]["simulation_end_time_s"],
         )
         _write_miluphcuda_script(case_directory, result["miluphcuda"])
-        print(
-            f"miluphcuda execution disabled; would invoke in {case_directory}:",
-            flush=True,
-        )
-        print(result["miluphcuda"]["command_text"], flush=True)
+        if not silent:
+            print(
+                f"miluphcuda execution disabled; would invoke in {case_directory}:",
+                flush=True,
+            )
+            print(result["miluphcuda"]["command_text"], flush=True)
         _write_json_atomic(case_directory / "case.json", result)
         manifest["cases"].append(result)
         _write_json_atomic(manifest_path, manifest)
@@ -574,11 +577,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path, help="path to the sweep JSON file")
     parser.add_argument("--dry-run", action="store_true", help="validate and list cases without writing output")
+    parser.add_argument(
+        "--silent",
+        action="store_true",
+        help="suppress terminal output; diagnostics remain in per-case log files",
+    )
     arguments = parser.parse_args(argv)
     try:
-        return execute(arguments.config.resolve(), arguments.dry_run)
+        return execute(arguments.config.resolve(), arguments.dry_run, arguments.silent)
     except (ConfigurationError, OSError, RuntimeError) as error:
-        print(f"error: {error}", file=sys.stderr)
+        if not arguments.silent:
+            print(f"error: {error}", file=sys.stderr)
         return 1
 
 

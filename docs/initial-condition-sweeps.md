@@ -19,6 +19,12 @@ python3 scripts/generate_initial_conditions.py examples/initial_conditions_sweep
 
 Remove `--dry-run` to generate the particle files. Paths in the JSON file are resolved relative to that file, not relative to the shell's current directory. The configured output directory must not already exist; this prevents accidental replacement of simulation data.
 
+Use `--silent` to suppress all terminal output from a valid invocation, including progress, dry-run case listings, planned `miluphcuda` commands, and handled error messages. The process still returns a nonzero exit status on failure, and each started case retains `spheres_ini.stdout.log` and `spheres_ini.stderr.log` for diagnosis. For example, to run a sweep in the background:
+
+```sh
+python3 scripts/generate_initial_conditions.py examples/initial_conditions_sweep.json --silent &
+```
+
 The example expands to 60 cases: three mass ratios, five impact velocities, and four impact angles. Runs are sequential so that simultaneous OpenMP and SEAGen jobs do not oversubscribe the machine.
 
 ## Parameter specifications

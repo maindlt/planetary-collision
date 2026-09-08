@@ -83,6 +83,15 @@ python3.14 scripts/generate_initial_conditions.py \
   examples/initial_conditions_sweep.json
 ```
 
+Add `--silent` to suppress terminal output during a background run. Per-case
+`spheres_ini` diagnostic logs are still written:
+
+```sh
+python3.14 scripts/generate_initial_conditions.py \
+  examples/initial_conditions_sweep.json \
+  --silent &
+```
+
 The output directory will contain `manifest.json`, the human-readable `case_table.txt`, and one directory per case. Each completed case contains the ten-column hydro input `impact.0000` with density, copied material configuration, hydrostatic structure files, logs, metadata, and the portable future `miluphcuda` launcher.
 
 See `docs/initial-condition-sweeps.md` for the complete JSON schema, supported parameter grids, output metadata, and command-template placeholders.

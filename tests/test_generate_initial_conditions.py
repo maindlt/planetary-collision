@@ -1,3 +1,5 @@
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 import math
 import os
 from pathlib import Path
@@ -14,6 +16,7 @@ from scripts.generate_initial_conditions import (
     _write_miluphcuda_script,
     expand_cases,
     expand_parameter,
+    main,
     render_case_table,
     render_spheres_input,
 )
@@ -165,6 +168,20 @@ class ExecutionMetadataTests(unittest.TestCase):
                 "cd \"$(dirname \"$0\")\" && exec 'miluphcuda future' "
                 "-f impact.0000 -m material.cfg\n",
             )
+
+
+class CommandLineTests(unittest.TestCase):
+    def test_silent_suppresses_handled_error_output(self):
+        stdout = StringIO()
+        stderr = StringIO()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            missing_config = Path(temporary_directory) / "missing.json"
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                return_code = main([str(missing_config), "--silent"])
+
+        self.assertEqual(return_code, 1)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "")
 
 
 if __name__ == "__main__":

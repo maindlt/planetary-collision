@@ -28,7 +28,7 @@ The existing macOS Makefile uses GCC, OpenMP, Python embedding headers/libraries
 - The driver always calls `spheres_ini` with `-H -G 2 -O 0`: hydrostatic profiles, SEAGen shells, and ten-column hydrodynamic `miluphcuda` output including the initial SPH density column. It does not expose solid or fragmentation modes.
 - Each run receives a copy of the source material file. Per-case and top-level JSON manifests record actual counts, the collision timescale parsed from the `spheres_ini` log, and derived timing.
 - The sweep root contains `case_table.txt`, a fixed-width mapping from all planned case-directory names to their requested input parameters. It is written before case execution.
-- `execution.miluphcuda` is planning-only and must have `enabled: false`. Its editable argument template is rendered per case, printed, and stored in both case and sweep metadata; it is never executed.
+- `execution.miluphcuda` is planning-only and must have `enabled: false`. Its editable argument template is rendered per case, printed, stored in both case and sweep metadata, and written as executable `run_miluphcuda.sh`. The script changes into its own case directory and uses relative input paths so the sweep tree can be transferred to a cluster; the generator never runs it.
 
 - `gamma` is the projectile-to-target mass ratio: `M_projectile / M_target`.
 - `zeta_iron` is applied identically to both bodies: iron core mass fraction `zeta_iron`, basalt mantle mass fraction `1 - zeta_iron`, and no outer shell.

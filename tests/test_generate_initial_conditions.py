@@ -1,13 +1,17 @@
 import math
+import os
 from pathlib import Path
+import tempfile
 import unittest
 
 from scripts.generate_initial_conditions import (
     ConfigurationError,
+    MILUPHCUDA_SCRIPT_NAME,
     SPHERES_INI_OUTPUT_MODE,
     _collision_timescale,
     _planned_miluphcuda,
     _validate_miluphcuda_config,
+    _write_miluphcuda_script,
     expand_cases,
     expand_parameter,
     render_case_table,
@@ -120,11 +124,14 @@ class ExecutionMetadataTests(unittest.TestCase):
             ],
         }
         _validate_miluphcuda_config(configuration)
-        planned = _planned_miluphcuda(configuration, Path("/tmp/case"), 100.0)
+        planned = _planned_miluphcuda(configuration, 100.0)
         self.assertEqual(planned["status"], "planned_not_executed")
         self.assertEqual(planned["command"][0], "miluphcuda_future")
         self.assertIn("10", planned["command"])
-        self.assertIn("/tmp/case/impact.0000", planned["command"])
+        self.assertIn("impact.0000", planned["command"])
+        self.assertNotIn("/tmp/case/impact.0000", planned["command"])
+        self.assertEqual(planned["working_directory"], ".")
+        self.assertEqual(planned["script_file"], MILUPHCUDA_SCRIPT_NAME)
         configuration["enabled"] = True
         with self.assertRaisesRegex(ConfigurationError, "must remain false"):
             _validate_miluphcuda_config(configuration)
@@ -138,6 +145,26 @@ class ExecutionMetadataTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ConfigurationError, "unknown.*placeholder"):
             _validate_miluphcuda_config(configuration)
+
+    def test_writes_executable_portable_miluphcuda_script(self):
+        configuration = {
+            "enabled": False,
+            "executable": "miluphcuda future",
+            "n_frames": 10,
+            "arguments": ["-f", "{impact_file}", "-m", "{material_file}"],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            case_directory = Path(temporary_directory)
+            planned = _planned_miluphcuda(configuration, 100.0)
+            script_path = _write_miluphcuda_script(case_directory, planned)
+            self.assertEqual(script_path.name, "run_miluphcuda.sh")
+            self.assertTrue(os.access(script_path, os.X_OK))
+            self.assertEqual(
+                script_path.read_text(),
+                "#!/bin/sh\n"
+                "cd \"$(dirname \"$0\")\" && exec 'miluphcuda future' "
+                "-f impact.0000 -m material.cfg\n",
+            )
 
 
 if __name__ == "__main__":

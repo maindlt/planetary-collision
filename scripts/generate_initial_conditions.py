@@ -21,6 +21,7 @@ from typing import Any, Iterable
 
 G_SI = 6.6741e-11
 SPHERES_INI_OUTPUT_MODE = 0
+MILUPHCUDA_SCRIPT_NAME = "run_miluphcuda.sh"
 PARAMETER_NAMES = (
     "m_tot_kg",
     "gamma",
@@ -392,13 +393,13 @@ def _derived_metadata(case: dict[str, float], case_directory: Path, stdout: str)
 
 
 def _planned_miluphcuda(
-    configuration: dict[str, Any], case_directory: Path, simulation_end_time: float
+    configuration: dict[str, Any], simulation_end_time: float
 ) -> dict[str, Any]:
     n_frames = configuration["n_frames"]
     substitutions = {
-        "case_directory": str(case_directory),
-        "impact_file": str(case_directory / "impact.0000"),
-        "material_file": str(case_directory / "material.cfg"),
+        "case_directory": ".",
+        "impact_file": "impact.0000",
+        "material_file": "material.cfg",
         "simulation_end_time_s": format(simulation_end_time, ".16g"),
         "n_frames": str(n_frames),
         "output_interval_s": format(simulation_end_time / n_frames, ".16g"),
@@ -416,9 +417,23 @@ def _planned_miluphcuda(
         "status": "planned_not_executed",
         "enabled": False,
         "n_frames": n_frames,
+        "working_directory": ".",
+        "script_file": MILUPHCUDA_SCRIPT_NAME,
         "command": command,
         "command_text": shlex.join(command),
     }
+
+
+def _write_miluphcuda_script(
+    case_directory: Path, planned_command: dict[str, Any]
+) -> Path:
+    script_path = case_directory / MILUPHCUDA_SCRIPT_NAME
+    script_path.write_text(
+        "#!/bin/sh\n"
+        f'cd "$(dirname "$0")" && exec {planned_command["command_text"]}\n'
+    )
+    script_path.chmod(0o755)
+    return script_path
 
 
 def _case_records(cases: Iterable[dict[str, float]]) -> list[dict[str, Any]]:
@@ -486,6 +501,7 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
         },
         "miluphcuda": {
             "status": "planning_only",
+            "case_script_file": MILUPHCUDA_SCRIPT_NAME,
             **config["execution"]["miluphcuda"],
         },
         "case_count": len(records),
@@ -540,10 +556,13 @@ def execute(config_path: Path, dry_run: bool = False) -> int:
         result["derived"] = _derived_metadata(case, case_directory, completed.stdout)
         result["miluphcuda"] = _planned_miluphcuda(
             config["execution"]["miluphcuda"],
-            case_directory,
             result["derived"]["simulation_end_time_s"],
         )
-        print("miluphcuda execution disabled; would invoke:", flush=True)
+        _write_miluphcuda_script(case_directory, result["miluphcuda"])
+        print(
+            f"miluphcuda execution disabled; would invoke in {case_directory}:",
+            flush=True,
+        )
         print(result["miluphcuda"]["command_text"], flush=True)
         _write_json_atomic(case_directory / "case.json", result)
         manifest["cases"].append(result)

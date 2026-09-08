@@ -47,7 +47,16 @@ The program forms the full Cartesian product of all expanded values. `execution.
 
 ## Planned miluphcuda command
 
-The `execution.miluphcuda` object describes a future simulation command. The generator currently requires `enabled` to be `false`; it will never launch `miluphcuda`. After each initial condition is generated, it prints the planned command and records it in both the case metadata and the top-level manifest.
+The `execution.miluphcuda` object describes a future simulation command. The generator currently requires `enabled` to be `false`; it will never launch `miluphcuda` itself. After each initial condition is generated, it prints the planned command, records it in both the case metadata and the top-level manifest, and writes an executable `run_miluphcuda.sh` into the case directory.
+
+The generated script changes into its own directory and invokes the configured executable with relative `impact.0000` and `material.cfg` paths. A complete sweep directory can therefore be moved to a cluster without retaining paths from the machine that generated it. For portability, configure `executable` as a command available on the cluster's `PATH`, or edit it after transfer. The script is deliberately minimal:
+
+```sh
+#!/bin/sh
+cd "$(dirname "$0")" && exec miluphcuda ... -f impact.0000 -m material.cfg
+```
+
+Run it manually from a login or batch script only after the appropriate GPU environment and `miluphcuda` build are available.
 
 The `arguments` list is deliberately configurable because available options can depend on how `miluphcuda` was compiled. It supports these placeholders:
 
@@ -84,6 +93,7 @@ Each case directory contains:
 - a private copy of `material.cfg`, whose smoothing length is updated by `spheres_ini`;
 - `projectile.structure` and `target.structure` hydrostatic profiles;
 - standard-output and standard-error logs;
+- executable `run_miluphcuda.sh`, containing the portable planned simulation command;
 - `case.json` with requested parameters, exact `spheres_ini` command, planned `miluphcuda` command, actual particle counts, radii, masses, velocities, and derived timing.
 
 The top-level `manifest.json` accumulates the status and metadata for the entire sweep. It is updated after every completed case. Beside it, `case_table.txt` provides a fixed-width ASCII table mapping every case directory to its eight requested parameter values. The complete table is written before particle generation starts, so it remains a useful index if a later case fails.

@@ -25,6 +25,9 @@ The existing macOS Makefile uses GCC, OpenMP, Python embedding headers/libraries
 
 - `scripts/generate_initial_conditions.py` expands the JSON grid in `examples/initial_conditions_sweep.json` and runs cases sequentially.
 - Its `--silent` option suppresses driver output and handled error messages while preserving per-case `spheres_ini` logs and failure exit status.
+- `--resume` requires the exact stored case set; `--extend` requires a strict superset and retains all old case names. `--retry-failed` is required to rerun cases with a recorded failure.
+- Every planned case is stored up front with a state and attempt count. Atomic `case.json` files are authoritative for completion; incomplete attempt directories are preserved under `_incomplete_attempts/` before rerunning.
+- Restart compatibility is based on case identities, the material-file checksum, fixed generation mode, and planned `miluphcuda` configuration. A sweep lock prevents concurrent generator processes.
 - Paths in a sweep configuration are relative to the JSON file. The output directory must not exist before a real run.
 - The driver always calls `spheres_ini` with `-H -G 2 -O 0`: hydrostatic profiles, SEAGen shells, and ten-column hydrodynamic `miluphcuda` output including the initial SPH density column. It does not expose solid or fragmentation modes.
 - Each run receives a copy of the source material file. Per-case and top-level JSON manifests record actual counts, the collision timescale parsed from the `spheres_ini` log, and derived timing.

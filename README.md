@@ -92,6 +92,19 @@ python3.14 scripts/generate_initial_conditions.py \
   --silent &
 ```
 
+Restart an interrupted sweep without recalculating completed cases:
+
+```sh
+python3.14 scripts/generate_initial_conditions.py \
+  examples/initial_conditions_sweep.json \
+  --resume
+```
+
+After adding parameter values to make the JSON grid a strict superset of the
+stored sweep, use `--extend`. Failed cases require the explicit
+`--retry-failed` option. See the detailed guide below for recovery behavior and
+configuration-safety checks.
+
 The output directory will contain `manifest.json`, the human-readable `case_table.txt`, and one directory per case. Each completed case contains the ten-column hydro input `impact.0000` with density, copied material configuration, hydrostatic structure files, logs, metadata, and the portable future `miluphcuda` launcher.
 
 See `docs/initial-condition-sweeps.md` for the complete JSON schema, supported parameter grids, output metadata, and command-template placeholders.

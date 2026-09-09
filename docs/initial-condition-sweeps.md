@@ -27,6 +27,35 @@ python3 scripts/generate_initial_conditions.py examples/initial_conditions_sweep
 
 The example expands to 60 cases: three mass ratios, five impact velocities, and four impact angles. Runs are sequential so that simultaneous OpenMP and SEAGen jobs do not oversubscribe the machine.
 
+## Resuming and extending a sweep
+
+A normal run still requires a new output directory. If a run was interrupted, continue it explicitly with the unchanged JSON plan:
+
+```sh
+python3 scripts/generate_initial_conditions.py examples/initial_conditions_sweep.json --resume
+```
+
+The generator reconciles the manifest with each case's atomically written `case.json`. Valid `complete` cases are preserved and skipped. A case left `running`, missing required output, or otherwise incomplete is marked `interrupted`; its directory is moved beneath `_incomplete_attempts/` before a clean replacement attempt is started. This preserves logs and partial files for diagnosis. `SIGINT` and `SIGTERM` cancellation also mark the active case as interrupted when the process has time to handle the signal.
+
+Cases that exited unsuccessfully have status `failed`. They are not retried by a plain resume. Resume with the explicit retry option after addressing the cause:
+
+```sh
+python3 scripts/generate_initial_conditions.py examples/initial_conditions_sweep.json \
+  --resume --retry-failed
+```
+
+To add cases, edit the JSON parameter grid so that its Cartesian product is a strict superset of the stored plan, then run:
+
+```sh
+python3 scripts/generate_initial_conditions.py examples/initial_conditions_sweep.json --extend
+```
+
+Every old case must remain present and at least one new case must be added. Existing case names and completed particle arrangements are retained; new cases receive new sequential directory names. Use `--resume`, rather than `--extend`, when the plan has not changed. Removing or replacing cases is rejected.
+
+Restart also verifies the source material file's SHA-256 checksum, the fixed `spheres_ini` generation mode, and the planned `miluphcuda` configuration. This prevents one sweep from silently mixing incompatible inputs. Executable and source-directory paths may change, allowing a sweep to be resumed after moving or repairing its software installation. An advisory `.sweep.lock` prevents two generator processes from modifying the same sweep concurrently.
+
+Sweeps created by an earlier generator are upgraded during their first restart. The migration recovers every original case identity from `case_table.txt`, so that file must still be present and intact. The supplied JSON must contain every recovered case; it may be the exact original plan for `--resume` or a strict superset for `--extend`. Legacy sweeps using a different generation mode, including density-free `-O 3` output, are rejected rather than mixed with the current format.
+
 ## Parameter specifications
 
 The `parameters` object must contain exactly these names:
@@ -102,7 +131,7 @@ Each case directory contains:
 - executable `run_miluphcuda.sh`, containing the portable planned simulation command;
 - `case.json` with requested parameters, exact `spheres_ini` command, planned `miluphcuda` command, actual particle counts, radii, masses, velocities, and derived timing.
 
-The top-level `manifest.json` accumulates the status and metadata for the entire sweep. It is updated after every completed case. Beside it, `case_table.txt` provides a fixed-width ASCII table mapping every case directory to its eight requested parameter values. The complete table is written before particle generation starts, so it remains a useful index if a later case fails.
+The top-level `manifest.json` contains every planned case and its `pending`, `running`, `interrupted`, `failed`, or `complete` status. It is updated atomically before and after every attempt. Beside it, `case_table.txt` provides a fixed-width ASCII table mapping every case directory to its status, attempt count, and eight requested parameter values. The complete table is written before particle generation starts and updated with the manifest.
 
 SEAGen keeps material-boundary shells intact, so `n_tot` is approximate. The requested and actual particle counts are both recorded. The end time stored in the metadata is
 

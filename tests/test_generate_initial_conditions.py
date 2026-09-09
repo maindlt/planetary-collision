@@ -1,5 +1,6 @@
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+import json
 import math
 import os
 from pathlib import Path
@@ -12,8 +13,10 @@ from scripts.generate_initial_conditions import (
     SPHERES_INI_OUTPUT_MODE,
     _collision_timescale,
     _planned_miluphcuda,
+    _sweep_lock,
     _validate_miluphcuda_config,
     _write_miluphcuda_script,
+    execute,
     expand_cases,
     expand_parameter,
     main,
@@ -24,6 +27,63 @@ from scripts.generate_initial_conditions import (
 
 def constant(value):
     return {"mode": "constant", "value": value}
+
+
+def write_execution_fixture(root: Path, impact_angles: list[float]) -> tuple[Path, Path]:
+    source = root / "spheres_ini_source"
+    (source / "SEAGen").mkdir(parents=True, exist_ok=True)
+    (source / "run_SEAGen.py").write_text("")
+    (source / "SEAGen" / "seagen.py").write_text("")
+    executable = source / "spheres_ini"
+    executable.write_text(
+        "#!/usr/bin/env python3\n"
+        "from pathlib import Path\n"
+        "Path('impact.0000').write_text("
+        "'0 0 0 0 0 0 1e21 3000 1e5 0\\n1 0 0 0 0 0 1e21 3000 1e5 1\\n')\n"
+        "Path('projectile.structure').write_text('1 0\\n')\n"
+        "Path('target.structure').write_text('1 0\\n')\n"
+        "print('projectile: N_des = 1 N = 1')\n"
+        "print('target: N_des = 1 N = 1')\n"
+        "print('projectile: desired: R = 1')\n"
+        "print('  actual/final: R = 1')\n"
+        "print('target: desired: R = 1')\n"
+        "print('  actual/final: R = 1')\n"
+        "print('collision timescale (R_p+R_t)/|v_imp| = 100 sec')\n"
+    )
+    executable.chmod(0o755)
+    material = root / "material.cfg"
+    material.write_text("material fixture\n")
+    output = root / "sweep"
+    config_path = root / "sweep.json"
+    configuration = {
+        "paths": {
+            "spheres_ini_executable": str(executable),
+            "spheres_ini_source": str(source),
+            "material_file": str(material),
+            "output_directory": str(output),
+        },
+        "execution": {
+            "max_cases": 20,
+            "miluphcuda": {
+                "enabled": False,
+                "executable": "miluphcuda",
+                "arguments": ["-f", "{impact_file}", "-m", "{material_file}"],
+                "n_frames": 10,
+            },
+        },
+        "parameters": {
+            "m_tot_kg": constant(2e21),
+            "gamma": constant(1),
+            "zeta_iron": constant(0.3),
+            "v_imp_over_v_esc": constant(1),
+            "impact_angle_deg": {"mode": "list", "values": impact_angles},
+            "f_i": constant(5),
+            "f_t": constant(50),
+            "n_tot": constant(100),
+        },
+    }
+    config_path.write_text(json.dumps(configuration))
+    return config_path, output
 
 
 class ParameterExpansionTests(unittest.TestCase):
@@ -103,6 +163,8 @@ class InputRenderingTests(unittest.TestCase):
         ]
         table = render_case_table(records)
         lines = table.splitlines()
+        self.assertIn("status", lines[0])
+        self.assertIn("attempts", lines[0])
         self.assertIn("case_directory", lines[0])
         self.assertIn("m_tot_kg", lines[0])
         self.assertIn("impact_angle_deg", lines[0])
@@ -168,6 +230,131 @@ class ExecutionMetadataTests(unittest.TestCase):
                 "cd \"$(dirname \"$0\")\" && exec 'miluphcuda future' "
                 "-f impact.0000 -m material.cfg\n",
             )
+
+
+class RestartExecutionTests(unittest.TestCase):
+    def test_resume_preserves_complete_cases_and_extend_adds_only_new_cases(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path, output = write_execution_fixture(root, [0])
+            self.assertEqual(execute(config_path, silent=True), 0)
+
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["status_counts"], {"complete": 1})
+            original_case = output / manifest["cases"][0]["case_name"]
+            marker = original_case / "preserved.marker"
+            marker.write_text("keep\n")
+
+            self.assertEqual(
+                execute(config_path, silent=True, restart_mode="resume"), 0
+            )
+            self.assertTrue(marker.is_file())
+
+            config_path, _ = write_execution_fixture(root, [0, 30])
+            self.assertEqual(
+                execute(config_path, silent=True, restart_mode="extend"), 0
+            )
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["case_count"], 2)
+            self.assertEqual(manifest["status_counts"], {"complete": 2})
+            self.assertTrue(marker.is_file())
+            self.assertEqual(len(manifest["extensions"]), 1)
+
+            with self.assertRaisesRegex(ConfigurationError, "strict superset"):
+                execute(config_path, silent=True, restart_mode="extend")
+
+    def test_resume_archives_and_recalculates_an_interrupted_case(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path, output = write_execution_fixture(root, [0])
+            self.assertEqual(execute(config_path, silent=True), 0)
+            manifest = json.loads((output / "manifest.json").read_text())
+            case_directory = output / manifest["cases"][0]["case_name"]
+            case_data = json.loads((case_directory / "case.json").read_text())
+            case_data["status"] = "running"
+            (case_directory / "case.json").write_text(json.dumps(case_data))
+
+            self.assertEqual(
+                execute(config_path, silent=True, restart_mode="resume"), 0
+            )
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["cases"][0]["status"], "complete")
+            self.assertEqual(manifest["cases"][0]["attempts"], 2)
+            archived = list((output / "_incomplete_attempts").iterdir())
+            self.assertEqual(len(archived), 1)
+
+    def test_failed_case_requires_explicit_retry(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path, output = write_execution_fixture(root, [0])
+            self.assertEqual(execute(config_path, silent=True), 0)
+            manifest = json.loads((output / "manifest.json").read_text())
+            case_directory = output / manifest["cases"][0]["case_name"]
+            case_data = json.loads((case_directory / "case.json").read_text())
+            case_data["status"] = "failed"
+            case_data["return_code"] = 2
+            (case_directory / "case.json").write_text(json.dumps(case_data))
+
+            with self.assertRaisesRegex(RuntimeError, "failed case"):
+                execute(config_path, silent=True, restart_mode="resume")
+            self.assertEqual(
+                execute(
+                    config_path,
+                    silent=True,
+                    restart_mode="resume",
+                    retry_failed=True,
+                ),
+                0,
+            )
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["cases"][0]["status"], "complete")
+            self.assertEqual(manifest["cases"][0]["attempts"], 2)
+
+    def test_legacy_manifest_can_extend_using_its_case_table(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path, output = write_execution_fixture(root, [0])
+            self.assertEqual(execute(config_path, silent=True), 0)
+            manifest_path = output / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest.pop("schema_version")
+            manifest.pop("restart_signature")
+            manifest.pop("plan_fingerprint")
+            manifest_path.write_text(json.dumps(manifest))
+
+            config_path, _ = write_execution_fixture(root, [0, 30])
+            self.assertEqual(
+                execute(config_path, silent=True, restart_mode="extend"), 0
+            )
+            migrated = json.loads(manifest_path.read_text())
+            self.assertEqual(migrated["schema_version"], 2)
+            self.assertEqual(migrated["case_count"], 2)
+            self.assertIn("migrated_from_legacy_manifest_at", migrated)
+
+    def test_legacy_density_free_sweep_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path, output = write_execution_fixture(root, [0])
+            self.assertEqual(execute(config_path, silent=True), 0)
+            manifest_path = output / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest.pop("schema_version")
+            manifest.pop("restart_signature")
+            manifest["mode"]["spheres_ini_output_mode"] = 3
+            manifest["mode"]["density_column"] = False
+            manifest_path.write_text(json.dumps(manifest))
+
+            with self.assertRaisesRegex(ConfigurationError, "incompatible"):
+                execute(config_path, silent=True, restart_mode="resume")
+
+    def test_sweep_lock_rejects_a_concurrent_generator(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path, output = write_execution_fixture(root, [0])
+            self.assertEqual(execute(config_path, silent=True), 0)
+            with _sweep_lock(output):
+                with self.assertRaisesRegex(ConfigurationError, "another generator"):
+                    execute(config_path, silent=True, restart_mode="resume")
 
 
 class CommandLineTests(unittest.TestCase):

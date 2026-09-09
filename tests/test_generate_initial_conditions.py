@@ -149,6 +149,7 @@ class InputRenderingTests(unittest.TestCase):
         records = [
             {
                 "case_name": "case_00001_abc123",
+                "derived": {"n_tot_actual": 11234},
                 "parameters": {
                     "m_tot_kg": 1.886e21,
                     "gamma": 0.5,
@@ -168,9 +169,14 @@ class InputRenderingTests(unittest.TestCase):
         self.assertIn("case_directory", lines[0])
         self.assertIn("m_tot_kg", lines[0])
         self.assertIn("impact_angle_deg", lines[0])
+        self.assertIn("n_tot_actual", lines[0])
         self.assertIn("case_00001_abc123", lines[2])
         self.assertIn("1.886e+21", lines[2])
         self.assertIn("100000", lines[2])
+        self.assertTrue(lines[2].endswith("11234"))
+        pending_record = {**records[0]}
+        pending_record.pop("derived")
+        self.assertTrue(render_case_table([pending_record]).splitlines()[2].endswith("-"))
 
 
 class ExecutionMetadataTests(unittest.TestCase):
@@ -241,6 +247,9 @@ class RestartExecutionTests(unittest.TestCase):
 
             manifest = json.loads((output / "manifest.json").read_text())
             self.assertEqual(manifest["status_counts"], {"complete": 1})
+            table = (output / "case_table.txt").read_text().splitlines()
+            self.assertIn("n_tot_actual", table[0])
+            self.assertTrue(table[2].endswith("2"))
             original_case = output / manifest["cases"][0]["case_name"]
             marker = original_case / "preserved.marker"
             marker.write_text("keep\n")

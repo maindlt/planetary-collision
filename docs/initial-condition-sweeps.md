@@ -131,7 +131,7 @@ Each case directory contains:
 - executable `run_miluphcuda.sh`, containing the portable planned simulation command;
 - `case.json` with requested parameters, exact `spheres_ini` command, planned `miluphcuda` command, actual particle counts, radii, masses, velocities, and derived timing.
 
-The top-level `manifest.json` contains every planned case and its `pending`, `running`, `interrupted`, `failed`, or `complete` status. It is updated atomically before and after every attempt. Beside it, `case_table.txt` provides a fixed-width ASCII table mapping every case directory to its status, attempt count, and eight requested parameter values. The complete table is written before particle generation starts and updated with the manifest.
+The top-level `manifest.json` contains every planned case and its `pending`, `running`, `interrupted`, `failed`, or `complete` status. It is updated atomically before and after every attempt. Beside it, `case_table.txt` provides a fixed-width ASCII table mapping every case directory to its status, attempt count, eight requested parameter values, and validated actual SPH particle count. The `n_tot_actual` entry is `-` until validated result metadata is available. The complete table is written before particle generation starts and updated with the manifest.
 
 SEAGen keeps material-boundary shells intact, so `n_tot` is approximate. The requested and actual particle counts are both recorded. The end time stored in the metadata is
 

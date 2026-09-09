@@ -503,7 +503,13 @@ def _case_records(cases: Iterable[dict[str, float]]) -> list[dict[str, Any]]:
 
 
 def render_case_table(records: Iterable[dict[str, Any]]) -> str:
-    headers = ("status", "attempts", "case_directory", *PARAMETER_NAMES)
+    headers = (
+        "status",
+        "attempts",
+        "case_directory",
+        *PARAMETER_NAMES,
+        "n_tot_actual",
+    )
     rows = []
     for record in records:
         parameters = record["parameters"]
@@ -517,6 +523,8 @@ def render_case_table(records: Iterable[dict[str, Any]]) -> str:
             values.append(
                 str(int(value)) if name == "n_tot" else format(value, ".16g")
             )
+        actual_count = record.get("derived", {}).get("n_tot_actual")
+        values.append(str(actual_count) if type(actual_count) is int else "-")
         rows.append(values)
 
     widths = [

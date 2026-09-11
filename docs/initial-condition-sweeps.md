@@ -4,7 +4,7 @@
 
 - hydrostatic radial structures (`-H`);
 - SEAGen spherical-shell placement (`-G 2`);
-- `miluphcuda` hydro output including the initial SPH density column (`-O 0`);
+- `miluphcuda` hydro output, including the initial SPH density column by default (`-O 0`);
 - no solid-body stress fields and no fragmentation or Weibull flaws;
 - identical iron-core fractions in projectile and target;
 - basalt mantle fraction `1 - zeta_iron` and no outer shell.
@@ -18,6 +18,8 @@ python3 scripts/generate_initial_conditions.py examples/initial_conditions_sweep
 ```
 
 Remove `--dry-run` to generate the particle files. Paths in the JSON file are resolved relative to that file, not relative to the shell's current directory. The configured output directory must not already exist; this prevents accidental replacement of simulation data.
+
+Use `--no-density-column` to request the nine-column hydrodynamic format (`spheres_ini -O 3`) instead of the default ten-column format (`-O 0`). Hydrostatic density is still calculated internally; only the density column in `impact.0000` is omitted. The selected format is recorded in the manifest and forms part of restart compatibility, so the same switch must be supplied with later `--resume` or `--extend` commands for that sweep.
 
 Use `--silent` to suppress all terminal output from a valid invocation, including progress, dry-run case listings, planned `miluphcuda` commands, and handled error messages. The process still returns a nonzero exit status on failure, and each started case retains `spheres_ini.stdout.log` and `spheres_ini.stderr.log` for diagnosis. For example, to run a sweep in the background:
 
@@ -54,7 +56,7 @@ Every old case must remain present and at least one new case must be added. Exis
 
 Restart also verifies the source material file's SHA-256 checksum, the fixed `spheres_ini` generation mode, and the planned `miluphcuda` configuration. This prevents one sweep from silently mixing incompatible inputs. Executable and source-directory paths may change, allowing a sweep to be resumed after moving or repairing its software installation. An advisory `.sweep.lock` prevents two generator processes from modifying the same sweep concurrently.
 
-Sweeps created by an earlier generator are upgraded during their first restart. The migration recovers every original case identity from `case_table.txt`, so that file must still be present and intact. The supplied JSON must contain every recovered case; it may be the exact original plan for `--resume` or a strict superset for `--extend`. Legacy sweeps using a different generation mode, including density-free `-O 3` output, are rejected rather than mixed with the current format.
+Sweeps created by an earlier generator are upgraded during their first restart. The migration recovers every original case identity from `case_table.txt`, so that file must still be present and intact. The supplied JSON must contain every recovered case; it may be the exact original plan for `--resume` or a strict superset for `--extend`. The requested density-column mode must match the legacy manifest; incompatible formats are rejected rather than mixed.
 
 ## Parameter specifications
 
@@ -123,7 +125,7 @@ For example:
 
 Each case directory contains:
 
-- `impact.0000`, the ten-column hydrodynamic SPH particle input including density;
+- `impact.0000`, the ten-column hydrodynamic SPH particle input including density by default, or nine columns when `--no-density-column` was selected;
 - the generated `spheres_ini.input`;
 - a private copy of `material.cfg`, whose smoothing length is updated by `spheres_ini`;
 - `projectile.structure` and `target.structure` hydrostatic profiles;

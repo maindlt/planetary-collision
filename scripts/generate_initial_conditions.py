@@ -25,6 +25,7 @@ from typing import Any, Iterable
 
 G_SI = 6.6741e-11
 SPHERES_INI_OUTPUT_MODE = 0
+SPHERES_INI_NO_DENSITY_OUTPUT_MODE = 3
 MILUPHCUDA_SCRIPT_NAME = "run_miluphcuda.sh"
 MANIFEST_SCHEMA_VERSION = 2
 INCOMPLETE_ATTEMPTS_DIRECTORY = "_incomplete_attempts"
@@ -541,14 +542,16 @@ def render_case_table(records: Iterable[dict[str, Any]]) -> str:
     return "\n".join([render_row(headers), separator, *(render_row(row) for row in rows)]) + "\n"
 
 
-def _restart_signature(config: dict[str, Any]) -> dict[str, Any]:
+def _restart_signature(
+    config: dict[str, Any], spheres_ini_output_mode: int
+) -> dict[str, Any]:
     return {
         "material_sha256": _sha256_file(config["resolved_paths"]["material_file"]),
         "miluphcuda": config["execution"]["miluphcuda"],
         "spheres_ini": {
             "hydrostatic_structure": True,
             "particle_geometry": 2,
-            "output_mode": SPHERES_INI_OUTPUT_MODE,
+            "output_mode": spheres_ini_output_mode,
         },
     }
 
@@ -559,22 +562,31 @@ def _plan_fingerprint(records: Iterable[dict[str, Any]]) -> str:
 
 
 def _new_manifest(
-    config_path: Path, config: dict[str, Any], records: list[dict[str, Any]]
+    config_path: Path,
+    config: dict[str, Any],
+    records: list[dict[str, Any]],
+    spheres_ini_output_mode: int,
 ) -> dict[str, Any]:
+    density_column = spheres_ini_output_mode != SPHERES_INI_NO_DENSITY_OUTPUT_MODE
+    output_description = (
+        "miluphcuda hydro with density column"
+        if density_column
+        else "miluphcuda hydro without density column"
+    )
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "created_at": _utc_now(),
         "updated_at": _utc_now(),
         "config_file": str(config_path),
         "generator": str(Path(__file__).resolve()),
-        "restart_signature": _restart_signature(config),
+        "restart_signature": _restart_signature(config, spheres_ini_output_mode),
         "plan_fingerprint": _plan_fingerprint(records),
         "mode": {
             "hydrostatic_structure": True,
             "particle_geometry": "SEAGen spherical shells",
-            "output": "miluphcuda hydro with density column",
-            "spheres_ini_output_mode": SPHERES_INI_OUTPUT_MODE,
-            "density_column": True,
+            "output": output_description,
+            "spheres_ini_output_mode": spheres_ini_output_mode,
+            "density_column": density_column,
             "solid_mechanics": False,
             "fragmentation_damage": False,
         },
@@ -620,16 +632,17 @@ def _migrate_legacy_manifest(
     desired_records: list[dict[str, Any]],
     output_directory: Path,
     config: dict[str, Any],
+    spheres_ini_output_mode: int,
 ) -> dict[str, Any]:
+    density_column = spheres_ini_output_mode != SPHERES_INI_NO_DENSITY_OUTPUT_MODE
     legacy_mode = manifest.get("mode", {})
     if (
         legacy_mode.get("hydrostatic_structure") is not True
-        or legacy_mode.get("spheres_ini_output_mode") != SPHERES_INI_OUTPUT_MODE
-        or legacy_mode.get("density_column") is not True
+        or legacy_mode.get("spheres_ini_output_mode") != spheres_ini_output_mode
+        or legacy_mode.get("density_column") is not density_column
     ):
         raise ConfigurationError(
-            "legacy sweep generation mode is incompatible with the current "
-            "hydro-with-density workflow"
+            "legacy sweep generation mode is incompatible with the requested output format"
         )
     expected_miluphcuda = config["execution"]["miluphcuda"]
     legacy_miluphcuda = manifest.get("miluphcuda", {})
@@ -705,6 +718,7 @@ def _prepare_restart_manifest(
     config: dict[str, Any],
     desired_records: list[dict[str, Any]],
     restart_mode: str,
+    spheres_ini_output_mode: int,
 ) -> dict[str, Any]:
     manifest_path = output_directory / "manifest.json"
     if not output_directory.is_dir() or not manifest_path.is_file():
@@ -716,15 +730,23 @@ def _prepare_restart_manifest(
     schema_version = manifest.get("schema_version")
     if schema_version is None:
         manifest = _migrate_legacy_manifest(
-            manifest, desired_records, output_directory, config
+            manifest,
+            desired_records,
+            output_directory,
+            config,
+            spheres_ini_output_mode,
         )
-        manifest["restart_signature"] = _restart_signature(config)
+        manifest["restart_signature"] = _restart_signature(
+            config, spheres_ini_output_mode
+        )
     elif schema_version != MANIFEST_SCHEMA_VERSION:
         raise ConfigurationError(
             f"unsupported restart manifest schema version: {schema_version}"
         )
 
-    if manifest.get("restart_signature") != _restart_signature(config):
+    if manifest.get("restart_signature") != _restart_signature(
+        config, spheres_ini_output_mode
+    ):
         raise ConfigurationError(
             "restart configuration is incompatible with the stored material, output mode, "
             "or planned miluphcuda command"
@@ -800,7 +822,7 @@ def _case_json(path: Path) -> dict[str, Any] | None:
 
 
 def _is_complete_case(
-    record: dict[str, Any], case_directory: Path
+    record: dict[str, Any], case_directory: Path, spheres_ini_output_mode: int
 ) -> tuple[bool, dict[str, Any] | None]:
     result = _case_json(case_directory / "case.json")
     if result is None or result.get("status") != "complete" or result.get("return_code") != 0:
@@ -809,6 +831,13 @@ def _is_complete_case(
         result.get("case_name") != record["case_name"]
         or _case_id(result.get("parameters", {})) != record["case_id"]
     ):
+        return False, result
+    command = result.get("command")
+    try:
+        stored_output_mode = command[command.index("-O") + 1]
+    except (AttributeError, IndexError, ValueError):
+        return False, result
+    if stored_output_mode != str(spheres_ini_output_mode):
         return False, result
     required_files = (
         "impact.0000",
@@ -823,13 +852,23 @@ def _is_complete_case(
         return False, result
     if (case_directory / "impact.0000").stat().st_size == 0:
         return False, result
+    expected_columns = (
+        9 if spheres_ini_output_mode == SPHERES_INI_NO_DENSITY_OUTPUT_MODE else 10
+    )
+    with (case_directory / "impact.0000").open() as particle_file:
+        first_row = next((line for line in particle_file if line.strip()), None)
+    if first_row is None or len(first_row.split()) != expected_columns:
+        return False, result
     return True, result
 
 
 def _reconcile_cases(output_directory: Path, manifest: dict[str, Any]) -> None:
+    spheres_ini_output_mode = manifest["mode"]["spheres_ini_output_mode"]
     for index, record in enumerate(manifest["cases"]):
         case_directory = output_directory / record["case_name"]
-        complete, case_result = _is_complete_case(record, case_directory)
+        complete, case_result = _is_complete_case(
+            record, case_directory, spheres_ini_output_mode
+        )
         if complete:
             manifest["cases"][index] = {
                 **record,
@@ -917,16 +956,24 @@ def _execute_sweep(
     silent: bool,
     restart_mode: str | None,
     retry_failed: bool,
+    spheres_ini_output_mode: int,
 ) -> int:
     paths = config["resolved_paths"]
     output_directory = paths["output_directory"]
     if restart_mode:
         manifest = _prepare_restart_manifest(
-            output_directory, config_path, config, records, restart_mode
+            output_directory,
+            config_path,
+            config,
+            records,
+            restart_mode,
+            spheres_ini_output_mode,
         )
         _reconcile_cases(output_directory, manifest)
     else:
-        manifest = _new_manifest(config_path, config, records)
+        manifest = _new_manifest(
+            config_path, config, records, spheres_ini_output_mode
+        )
     _persist_sweep_state(output_directory, manifest)
 
     for index, record in enumerate(manifest["cases"], start=1):
@@ -944,7 +991,7 @@ def _execute_sweep(
             str(paths["spheres_ini_executable"]),
             "-H",
             "-G", "2",
-            "-O", str(SPHERES_INI_OUTPUT_MODE),
+            "-O", str(spheres_ini_output_mode),
             "-S", str(paths["spheres_ini_source"]),
             "-f", "spheres_ini.input",
             "-m", "material.cfg",
@@ -1016,11 +1063,17 @@ def execute(
     silent: bool = False,
     restart_mode: str | None = None,
     retry_failed: bool = False,
+    no_density_column: bool = False,
 ) -> int:
     config, cases = load_configuration(config_path)
     paths = config["resolved_paths"]
     _validate_runtime_paths(paths)
     records = _case_records(cases)
+    spheres_ini_output_mode = (
+        SPHERES_INI_NO_DENSITY_OUTPUT_MODE
+        if no_density_column
+        else SPHERES_INI_OUTPUT_MODE
+    )
 
     if dry_run:
         if restart_mode or retry_failed:
@@ -1051,6 +1104,7 @@ def execute(
             silent,
             restart_mode,
             retry_failed,
+            spheres_ini_output_mode,
         )
 
 
@@ -1062,6 +1116,11 @@ def main(argv: list[str] | None = None) -> int:
         "--silent",
         action="store_true",
         help="suppress terminal output; diagnostics remain in per-case log files",
+    )
+    parser.add_argument(
+        "--no-density-column",
+        action="store_true",
+        help="write nine-column hydro output with spheres_ini mode -O 3",
     )
     restart_group = parser.add_mutually_exclusive_group()
     restart_group.add_argument(
@@ -1093,6 +1152,7 @@ def main(argv: list[str] | None = None) -> int:
             arguments.silent,
             restart_mode,
             arguments.retry_failed,
+            arguments.no_density_column,
         )
     except (ConfigurationError, OSError, RuntimeError) as error:
         if not arguments.silent:

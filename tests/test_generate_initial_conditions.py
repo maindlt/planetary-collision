@@ -10,6 +10,7 @@ import unittest
 from scripts.generate_initial_conditions import (
     ConfigurationError,
     MILUPHCUDA_SCRIPT_NAME,
+    SPHERES_INI_NO_DENSITY_OUTPUT_MODE,
     SPHERES_INI_OUTPUT_MODE,
     _collision_timescale,
     _planned_miluphcuda,
@@ -38,8 +39,13 @@ def write_execution_fixture(root: Path, impact_angles: list[float]) -> tuple[Pat
     executable.write_text(
         "#!/usr/bin/env python3\n"
         "from pathlib import Path\n"
-        "Path('impact.0000').write_text("
+        "import sys\n"
+        "mode = int(sys.argv[sys.argv.index('-O') + 1])\n"
+        "rows = ("
+        "'0 0 0 0 0 0 1e21 1e5 0\\n1 0 0 0 0 0 1e21 1e5 1\\n' "
+        "if mode == 3 else "
         "'0 0 0 0 0 0 1e21 3000 1e5 0\\n1 0 0 0 0 0 1e21 3000 1e5 1\\n')\n"
+        "Path('impact.0000').write_text(rows)\n"
         "Path('projectile.structure').write_text('1 0\\n')\n"
         "Path('target.structure').write_text('1 0\\n')\n"
         "print('projectile: N_des = 1 N = 1')\n"
@@ -123,6 +129,7 @@ class ParameterExpansionTests(unittest.TestCase):
 class InputRenderingTests(unittest.TestCase):
     def test_output_mode_is_hydro_with_density(self):
         self.assertEqual(SPHERES_INI_OUTPUT_MODE, 0)
+        self.assertEqual(SPHERES_INI_NO_DENSITY_OUTPUT_MODE, 3)
 
     def test_hydro_material_and_damage_settings(self):
         case = {
@@ -239,6 +246,35 @@ class ExecutionMetadataTests(unittest.TestCase):
 
 
 class RestartExecutionTests(unittest.TestCase):
+    def test_no_density_column_uses_mode_three_and_is_restart_compatible(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path, output = write_execution_fixture(root, [0])
+            self.assertEqual(
+                execute(config_path, silent=True, no_density_column=True), 0
+            )
+            manifest = json.loads((output / "manifest.json").read_text())
+            case = manifest["cases"][0]
+            self.assertEqual(manifest["mode"]["spheres_ini_output_mode"], 3)
+            self.assertFalse(manifest["mode"]["density_column"])
+            self.assertEqual(case["command"][case["command"].index("-O") + 1], "3")
+            particle_row = (
+                output / case["case_name"] / "impact.0000"
+            ).read_text().splitlines()[0]
+            self.assertEqual(len(particle_row.split()), 9)
+
+            with self.assertRaisesRegex(ConfigurationError, "incompatible"):
+                execute(config_path, silent=True, restart_mode="resume")
+            self.assertEqual(
+                execute(
+                    config_path,
+                    silent=True,
+                    restart_mode="resume",
+                    no_density_column=True,
+                ),
+                0,
+            )
+
     def test_resume_preserves_complete_cases_and_extend_adds_only_new_cases(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

@@ -83,15 +83,21 @@ python3.14 scripts/generate_initial_conditions.py \
   examples/initial_conditions_sweep.json
 ```
 
-By default, `impact.0000` includes the initial density column. Add
-`--no-density-column` when a nine-column hydrodynamic input without density is
-required:
+The JSON `generation` section selects hydro or solid output, fragmentation, and
+the hydro density column. For example, this requests hydro output without the
+density column:
 
-```sh
-python3.14 scripts/generate_initial_conditions.py \
-  examples/initial_conditions_sweep.json \
-  --no-density-column
+```json
+"generation": {
+  "mode": "hydro",
+  "fragmentation": false,
+  "density_column": false
+}
 ```
+
+Set `mode` to `solid` and choose `fragmentation` as `false` or `true` for the
+two solid formats. Solid output always includes density. Older configurations
+without `generation` retain the default: hydro with density.
 
 Add `--silent` to suppress terminal output during a background run. Per-case
 `spheres_ini` diagnostic logs are still written:
@@ -115,6 +121,6 @@ stored sweep, use `--extend`. Failed cases require the explicit
 `--retry-failed` option. See the detailed guide below for recovery behavior and
 configuration-safety checks.
 
-The output directory will contain `manifest.json`, the human-readable `case_table.txt`, and one directory per case. Each completed case contains the hydro input `impact.0000` in the selected nine- or ten-column format, copied material configuration, hydrostatic structure files, logs, metadata, and the portable future `miluphcuda` launcher.
+The output directory will contain `manifest.json`, the human-readable `case_table.txt`, and one directory per case. Each completed case contains `impact.0000` in the selected hydro or solid format, copied material configuration, hydrostatic structure files, logs, metadata, and the portable future `miluphcuda` launcher.
 
 See `docs/initial-condition-sweeps.md` for the complete JSON schema, supported parameter grids, output metadata, and command-template placeholders.

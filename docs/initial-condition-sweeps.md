@@ -1,11 +1,10 @@
 # Hydrostatic initial-condition sweeps
 
-`scripts/generate_initial_conditions.py` turns a JSON parameter grid into separate `spheres_ini` runs. It uses Python's standard library only. Every case is intentionally fixed to:
+`scripts/generate_initial_conditions.py` turns a JSON parameter grid into separate `spheres_ini` runs. It uses Python's standard library only. Every case uses:
 
 - hydrostatic radial structures (`-H`);
 - SEAGen spherical-shell placement (`-G 2`);
-- `miluphcuda` hydro output, including the initial SPH density column by default (`-O 0`);
-- no solid-body stress fields and no fragmentation or Weibull flaws;
+- a JSON-selectable hydro or solid `miluphcuda` output format;
 - identical iron-core fractions in projectile and target;
 - basalt mantle fraction `1 - zeta_iron` and no outer shell.
 
@@ -19,7 +18,28 @@ python3 scripts/generate_initial_conditions.py examples/initial_conditions_sweep
 
 Remove `--dry-run` to generate the particle files. Paths in the JSON file are resolved relative to that file, not relative to the shell's current directory. The configured output directory must not already exist; this prevents accidental replacement of simulation data.
 
-Use `--no-density-column` to request the nine-column hydrodynamic format (`spheres_ini -O 3`) instead of the default ten-column format (`-O 0`). Hydrostatic density is still calculated internally; only the density column in `impact.0000` is omitted. The selected format is recorded in the manifest and forms part of restart compatibility, so the same switch must be supplied with later `--resume` or `--extend` commands for that sweep.
+The optional top-level `generation` object selects the output format:
+
+```json
+"generation": {
+  "mode": "hydro",
+  "fragmentation": false,
+  "density_column": true
+}
+```
+
+The valid combinations map to `spheres_ini` as follows:
+
+| `mode` | `fragmentation` | `density_column` | `spheres_ini` mode | Result |
+|---|---:|---:|---:|---|
+| `hydro` | `false` | `true` | `-O 0` | Ten-column hydro output with density |
+| `hydro` | `false` | `false` | `-O 3` | Nine-column hydro output without density |
+| `solid` | `false` | `true` | `-O 1` | Solid output with the initial stress tensor and no fragmentation |
+| `solid` | `true` | `true` | `-O 2` | Solid output with stress, damage, and Weibull flaws |
+
+Fragmentation is invalid in hydro mode, and solid output cannot omit density. In fragmentation mode, the basalt mantle receives Weibull flaws using `W_M` and `W_K` from the material configuration. The iron core remains without Weibull flaws because the supplied iron material has no Weibull parameters. Hydrostatic density is calculated internally in every mode, including hydro output that omits the density column.
+
+Configurations without `generation` remain valid and default to hydro with density. The selected format is recorded in the manifest and forms part of restart compatibility; the same `generation` settings must therefore be retained for `--resume` and `--extend`.
 
 Use `--silent` to suppress all terminal output from a valid invocation, including progress, dry-run case listings, planned `miluphcuda` commands, and handled error messages. The process still returns a nonzero exit status on failure, and each started case retains `spheres_ini.stdout.log` and `spheres_ini.stderr.log` for diagnosis. For example, to run a sweep in the background:
 
@@ -125,7 +145,7 @@ For example:
 
 Each case directory contains:
 
-- `impact.0000`, the ten-column hydrodynamic SPH particle input including density by default, or nine columns when `--no-density-column` was selected;
+- `impact.0000`, in the hydro, solid, or fragmentation format selected by `generation`;
 - the generated `spheres_ini.input`;
 - a private copy of `material.cfg`, whose smoothing length is updated by `spheres_ini`;
 - `projectile.structure` and `target.structure` hydrostatic profiles;

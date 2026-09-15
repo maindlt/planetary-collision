@@ -5,6 +5,11 @@
     "material_file": "../src/spheres_ini/material_iron_basalt.cfg",
     "output_directory": "../runs/example_hydro_sweep"
   },
+  "generation": {
+    "mode": "hydro",
+    "fragmentation": false,
+    "density_column": true
+  },
   "execution": {
     "max_cases": 100,
     "miluphcuda": {

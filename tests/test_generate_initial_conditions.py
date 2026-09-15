@@ -10,8 +10,10 @@ import unittest
 from scripts.generate_initial_conditions import (
     ConfigurationError,
     MILUPHCUDA_SCRIPT_NAME,
+    SPHERES_INI_FRAGMENTATION_OUTPUT_MODE,
     SPHERES_INI_NO_DENSITY_OUTPUT_MODE,
     SPHERES_INI_OUTPUT_MODE,
+    SPHERES_INI_SOLID_OUTPUT_MODE,
     _collision_timescale,
     _planned_miluphcuda,
     _sweep_lock,
@@ -30,7 +32,11 @@ def constant(value):
     return {"mode": "constant", "value": value}
 
 
-def write_execution_fixture(root: Path, impact_angles: list[float]) -> tuple[Path, Path]:
+def write_execution_fixture(
+    root: Path,
+    impact_angles: list[float],
+    generation: dict | None = None,
+) -> tuple[Path, Path]:
     source = root / "spheres_ini_source"
     (source / "SEAGen").mkdir(parents=True, exist_ok=True)
     (source / "run_SEAGen.py").write_text("")
@@ -41,11 +47,17 @@ def write_execution_fixture(root: Path, impact_angles: list[float]) -> tuple[Pat
         "from pathlib import Path\n"
         "import sys\n"
         "mode = int(sys.argv[sys.argv.index('-O') + 1])\n"
-        "rows = ("
-        "'0 0 0 0 0 0 1e21 1e5 0\\n1 0 0 0 0 0 1e21 1e5 1\\n' "
-        "if mode == 3 else "
-        "'0 0 0 0 0 0 1e21 3000 1e5 0\\n1 0 0 0 0 0 1e21 3000 1e5 1\\n')\n"
-        "Path('impact.0000').write_text(rows)\n"
+        "def row(x, material):\n"
+        "    columns = [x, 0, 0, 0, 0, 0, '1e21']\n"
+        "    if mode != 3:\n"
+        "        columns.append(3000)\n"
+        "    columns.extend(['1e5', material])\n"
+        "    if mode == 2:\n"
+        "        columns.extend([0, 0])\n"
+        "    if mode in (1, 2):\n"
+        "        columns.extend([0] * 9)\n"
+        "    return ' '.join(map(str, columns))\n"
+        "Path('impact.0000').write_text(row(0, 0) + '\\n' + row(1, 1) + '\\n')\n"
         "Path('projectile.structure').write_text('1 0\\n')\n"
         "Path('target.structure').write_text('1 0\\n')\n"
         "print('projectile: N_des = 1 N = 1')\n"
@@ -88,6 +100,8 @@ def write_execution_fixture(root: Path, impact_angles: list[float]) -> tuple[Pat
             "n_tot": constant(100),
         },
     }
+    if generation is not None:
+        configuration["generation"] = generation
     config_path.write_text(json.dumps(configuration))
     return config_path, output
 
@@ -129,6 +143,8 @@ class ParameterExpansionTests(unittest.TestCase):
 class InputRenderingTests(unittest.TestCase):
     def test_output_mode_is_hydro_with_density(self):
         self.assertEqual(SPHERES_INI_OUTPUT_MODE, 0)
+        self.assertEqual(SPHERES_INI_SOLID_OUTPUT_MODE, 1)
+        self.assertEqual(SPHERES_INI_FRAGMENTATION_OUTPUT_MODE, 2)
         self.assertEqual(SPHERES_INI_NO_DENSITY_OUTPUT_MODE, 3)
 
     def test_hydro_material_and_damage_settings(self):
@@ -246,15 +262,51 @@ class ExecutionMetadataTests(unittest.TestCase):
 
 
 class RestartExecutionTests(unittest.TestCase):
-    def test_no_density_column_uses_mode_three_and_is_restart_compatible(self):
+    def test_generation_rejects_invalid_physics_combinations(self):
+        invalid_settings = (
+            {
+                "mode": "hydro",
+                "fragmentation": True,
+                "density_column": True,
+            },
+            {
+                "mode": "solid",
+                "fragmentation": False,
+                "density_column": False,
+            },
+        )
+        for generation in invalid_settings:
+            with self.subTest(generation=generation):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    config_path, _ = write_execution_fixture(
+                        Path(temporary_directory), [0], generation
+                    )
+                    with self.assertRaises(ConfigurationError):
+                        execute(config_path, silent=True)
+
+    def test_json_no_density_column_uses_mode_three_and_is_restart_compatible(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            config_path, output = write_execution_fixture(root, [0])
-            self.assertEqual(
-                execute(config_path, silent=True, no_density_column=True), 0
+            config_path, output = write_execution_fixture(
+                root,
+                [0],
+                {
+                    "mode": "hydro",
+                    "fragmentation": False,
+                    "density_column": False,
+                },
             )
+            self.assertEqual(execute(config_path, silent=True), 0)
             manifest = json.loads((output / "manifest.json").read_text())
             case = manifest["cases"][0]
+            self.assertEqual(
+                manifest["generation"],
+                {
+                    "mode": "hydro",
+                    "fragmentation": False,
+                    "density_column": False,
+                },
+            )
             self.assertEqual(manifest["mode"]["spheres_ini_output_mode"], 3)
             self.assertFalse(manifest["mode"]["density_column"])
             self.assertEqual(case["command"][case["command"].index("-O") + 1], "3")
@@ -263,17 +315,61 @@ class RestartExecutionTests(unittest.TestCase):
             ).read_text().splitlines()[0]
             self.assertEqual(len(particle_row.split()), 9)
 
+            configuration = json.loads(config_path.read_text())
+            configuration["generation"]["density_column"] = True
+            config_path.write_text(json.dumps(configuration))
             with self.assertRaisesRegex(ConfigurationError, "incompatible"):
                 execute(config_path, silent=True, restart_mode="resume")
+            configuration["generation"]["density_column"] = False
+            config_path.write_text(json.dumps(configuration))
             self.assertEqual(
                 execute(
                     config_path,
                     silent=True,
                     restart_mode="resume",
-                    no_density_column=True,
                 ),
                 0,
             )
+
+    def test_solid_modes_select_stress_and_fragmentation_outputs(self):
+        modes = (
+            (False, SPHERES_INI_SOLID_OUTPUT_MODE, 19, "weibull_mantle = 0"),
+            (True, SPHERES_INI_FRAGMENTATION_OUTPUT_MODE, 21, "weibull_mantle = 1"),
+        )
+        for fragmentation, output_mode, column_count, weibull_setting in modes:
+            with self.subTest(fragmentation=fragmentation):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    root = Path(temporary_directory)
+                    config_path, output = write_execution_fixture(
+                        root,
+                        [0],
+                        {
+                            "mode": "solid",
+                            "fragmentation": fragmentation,
+                            "density_column": True,
+                        },
+                    )
+                    self.assertEqual(execute(config_path, silent=True), 0)
+                    manifest = json.loads((output / "manifest.json").read_text())
+                    case = manifest["cases"][0]
+                    self.assertEqual(
+                        manifest["mode"]["spheres_ini_output_mode"], output_mode
+                    )
+                    self.assertTrue(manifest["mode"]["solid_mechanics"])
+                    self.assertEqual(
+                        manifest["mode"]["fragmentation_damage"], fragmentation
+                    )
+                    case_directory = output / case["case_name"]
+                    particle_row = (
+                        (case_directory / "impact.0000")
+                        .read_text()
+                        .splitlines()[0]
+                    )
+                    self.assertEqual(len(particle_row.split()), column_count)
+                    self.assertIn(
+                        weibull_setting,
+                        (case_directory / "spheres_ini.input").read_text(),
+                    )
 
     def test_resume_preserves_complete_cases_and_extend_adds_only_new_cases(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -376,7 +472,7 @@ class RestartExecutionTests(unittest.TestCase):
             self.assertEqual(migrated["case_count"], 2)
             self.assertIn("migrated_from_legacy_manifest_at", migrated)
 
-    def test_legacy_density_free_sweep_is_rejected(self):
+    def test_legacy_output_format_mismatch_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             config_path, output = write_execution_fixture(root, [0])

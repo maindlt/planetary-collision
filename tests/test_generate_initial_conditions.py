@@ -10,6 +10,7 @@ import unittest
 from scripts.generate_initial_conditions import (
     ConfigurationError,
     MILUPHCUDA_SCRIPT_NAME,
+    MASS_UNITS_KG,
     SPHERES_INI_FRAGMENTATION_OUTPUT_MODE,
     SPHERES_INI_NO_DENSITY_OUTPUT_MODE,
     SPHERES_INI_OUTPUT_MODE,
@@ -22,7 +23,9 @@ from scripts.generate_initial_conditions import (
     execute,
     expand_cases,
     expand_parameter,
+    load_configuration,
     main,
+    parse_case_list,
     render_case_table,
     render_spheres_input,
 )
@@ -107,6 +110,81 @@ def write_execution_fixture(
 
 
 class ParameterExpansionTests(unittest.TestCase):
+    def test_coreless_cases_in_both_input_formats(self):
+        case = {
+            "m_tot_kg": 2 * MASS_UNITS_KG["moon"], "gamma": 1,
+            "zeta_iron": 0, "v_imp_over_v_esc": 1.625,
+            "impact_angle_deg": 0, "f_i": 5, "f_t": 50, "n_tot": 1000,
+        }
+        parsed = parse_case_list([case])[0]
+        self.assertEqual(expand_cases({name: constant(value) for name, value in case.items()}), [parsed])
+        rendered = render_spheres_input(parsed)
+        self.assertIn("mantle_proj = 1\n", rendered)
+        self.assertIn("mantle_target = 1\n", rendered)
+        self.assertIn("shell_proj = 0\n", rendered)
+        for fraction in (-0.01, 1, 1.01):
+            with self.subTest(fraction=fraction):
+                with self.assertRaisesRegex(ConfigurationError, "zeta_iron"):
+                    parse_case_list([{**case, "zeta_iron": fraction}])
+
+    def test_explicit_cases_and_validation(self):
+        case = {
+            "m_tot_kg": {"value": 2, "unit": "earth"},
+            "gamma": 0.1, "zeta_iron": 0.3, "v_imp_over_v_esc": 1.5,
+            "impact_angle_deg": 30, "f_i": 5, "f_t": 50, "n_tot": 1000,
+        }
+        other = {**case, "m_tot_kg": 1e23, "impact_angle_deg": 45}
+        parsed = parse_case_list([case, other])
+        self.assertEqual(len(parsed), 2)
+        self.assertEqual(parsed[0]["m_tot_kg"], 2 * MASS_UNITS_KG["earth"])
+        self.assertEqual(parsed[1]["m_tot_kg"], 1e23)
+        self.assertEqual(case["m_tot_kg"], {"value": 2, "unit": "earth"})
+        invalid = [
+            [], {}, [None], [{**case, "extra": 1}],
+            [{key: value for key, value in case.items() if key != "gamma"}],
+            [{**case, "gamma": True}], [{**case, "gamma": float("nan")}],
+            [{**case, "impact_angle_deg": 91}], [{**case, "f_t": 49}],
+            [{**case, "n_tot": 100.5}],
+            [{**case, "m_tot_kg": {"mode": "list", "values": [1, 2]}}],
+            [{**case, "m_tot_kg": {"value": 1, "unit": "solar"}}],
+            [case, {**case, "m_tot_kg": 2 * MASS_UNITS_KG["earth"]}],
+        ]
+        for specifications in invalid:
+            with self.subTest(specifications=specifications):
+                with self.assertRaises(ConfigurationError):
+                    parse_case_list(specifications)
+
+    def test_mass_units_normalize_all_grid_modes_to_kilograms(self):
+        specifications = [
+            constant(2),
+            {"mode": "list", "values": [1, 2, 4]},
+            {"mode": "linear", "minimum": 1, "maximum": 4, "count": 4},
+            {"mode": "log", "minimum": 1, "maximum": 8, "count": 5},
+        ]
+        for unit, scale in MASS_UNITS_KG.items():
+            for specification in specifications:
+                with self.subTest(unit=unit, mode=specification["mode"]):
+                    in_kg = dict(specification)
+                    for key in ("value", "minimum", "maximum"):
+                        if key in in_kg:
+                            in_kg[key] *= scale
+                    if "values" in in_kg:
+                        in_kg["values"] = [value * scale for value in in_kg["values"]]
+                    self.assertEqual(
+                        expand_parameter("m_tot_kg", {**specification, "unit": unit}),
+                        expand_parameter("m_tot_kg", in_kg),
+                    )
+
+    def test_mass_units_reject_invalid_units_and_overflow(self):
+        for unit in ("Moon", "solar", None, [], 1):
+            with self.subTest(unit=unit):
+                with self.assertRaisesRegex(ConfigurationError, "unit must be"):
+                    expand_parameter("m_tot_kg", {**constant(1), "unit": unit})
+        with self.assertRaisesRegex(ConfigurationError, "only supported"):
+            expand_parameter("gamma", {**constant(1), "unit": "earth"})
+        with self.assertRaisesRegex(ConfigurationError, "finite"):
+            expand_parameter("m_tot_kg", {**constant(1e300), "unit": "earth"})
+
     def test_all_modes(self):
         self.assertEqual(expand_parameter("x", constant(3)), [3.0])
         self.assertEqual(expand_parameter("x", {"mode": "list", "values": [1, 2]}), [1.0, 2.0])
@@ -262,6 +340,75 @@ class ExecutionMetadataTests(unittest.TestCase):
 
 
 class RestartExecutionTests(unittest.TestCase):
+    def test_case_list_resume_extend_and_grid_compatibility(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config_path, output = write_execution_fixture(Path(temporary_directory), [0, 30])
+            configuration = json.loads(config_path.read_text())
+            original_cases = expand_cases(configuration["parameters"])
+            del configuration["parameters"]
+            configuration["cases"] = original_cases
+            config_path.write_text(json.dumps(configuration))
+            self.assertEqual(execute(config_path, silent=True), 0)
+            initial = json.loads((output / "manifest.json").read_text())["cases"]
+            configuration["cases"] = list(reversed(original_cases))
+            config_path.write_text(json.dumps(configuration))
+            self.assertEqual(execute(config_path, silent=True, restart_mode="resume"), 0)
+            configuration["cases"].append({**original_cases[0], "impact_angle_deg": 45})
+            config_path.write_text(json.dumps(configuration))
+            self.assertEqual(execute(config_path, silent=True, restart_mode="extend"), 0)
+            extended = json.loads((output / "manifest.json").read_text())["cases"]
+            self.assertEqual(len(extended), 3)
+            self.assertEqual([case["case_name"] for case in extended[:2]],
+                             [case["case_name"] for case in initial])
+            self.assertTrue(all(case["attempts"] == 1 for case in extended))
+            configuration["cases"] = [original_cases[0], {**original_cases[0], "impact_angle_deg": 60}]
+            config_path.write_text(json.dumps(configuration))
+            with self.assertRaises(ConfigurationError):
+                execute(config_path, silent=True, restart_mode="extend")
+            del configuration["cases"]
+            configuration["parameters"] = {
+                name: constant(value) for name, value in original_cases[0].items()
+            }
+            configuration["parameters"]["impact_angle_deg"] = {"mode": "list", "values": [0, 30, 45]}
+            config_path.write_text(json.dumps(configuration))
+            self.assertEqual(execute(config_path, silent=True, restart_mode="resume"), 0)
+
+    def test_case_list_root_schema_and_case_limit(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config_path, _ = write_execution_fixture(Path(temporary_directory), [0, 30])
+            configuration = json.loads(config_path.read_text())
+            cases = expand_cases(configuration["parameters"])
+            for selection in ({}, {"cases": cases, "parameters": configuration["parameters"]}):
+                invalid = {key: value for key, value in configuration.items() if key != "parameters"}
+                invalid.update(selection)
+                config_path.write_text(json.dumps(invalid))
+                with self.assertRaisesRegex(ConfigurationError, "exactly one"):
+                    load_configuration(config_path)
+            del configuration["parameters"]
+            configuration["cases"] = cases
+            configuration["execution"]["max_cases"] = 1
+            config_path.write_text(json.dumps(configuration))
+            with self.assertRaisesRegex(ConfigurationError, "exceeding max_cases"):
+                load_configuration(config_path)
+
+    def test_resume_accepts_equivalent_mass_units(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config_path, output = write_execution_fixture(Path(temporary_directory), [0])
+            configuration = json.loads(config_path.read_text())
+            configuration["parameters"]["m_tot_kg"] = {
+                **constant(2), "unit": "earth"
+            }
+            config_path.write_text(json.dumps(configuration))
+            self.assertEqual(execute(config_path, silent=True), 0)
+            original = json.loads((output / "manifest.json").read_text())["cases"][0]
+            self.assertEqual(original["parameters"]["m_tot_kg"], 2 * MASS_UNITS_KG["earth"])
+            configuration["parameters"]["m_tot_kg"] = constant(2 * MASS_UNITS_KG["earth"])
+            config_path.write_text(json.dumps(configuration))
+            self.assertEqual(execute(config_path, silent=True, restart_mode="resume"), 0)
+            resumed = json.loads((output / "manifest.json").read_text())["cases"][0]
+            self.assertEqual(resumed["case_name"], original["case_name"])
+            self.assertEqual(resumed["attempts"], 1)
+
     def test_generation_rejects_invalid_physics_combinations(self):
         invalid_settings = (
             {

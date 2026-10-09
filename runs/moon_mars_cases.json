@@ -1,0 +1,354 @@
+{
+  "paths": {
+    "spheres_ini_executable": "../src/spheres_ini/spheres_ini",
+    "spheres_ini_source": "../src/spheres_ini",
+    "material_file": "../src/spheres_ini/material_iron_basalt.cfg",
+    "output_directory": "./moon_mars_cases"
+  },
+  "generation": {
+    "mode": "hydro",
+    "fragmentation": false,
+    "density_column": true
+  },
+  "execution": {
+    "max_cases": 24,
+    "miluphcuda": {
+      "enabled": false,
+      "executable": "miluphcuda",
+      "n_frames": 100,
+      "arguments": [
+        "-v",
+        "-I",
+        "rk2_adaptive",
+        "-Q",
+        "1e-4",
+        "-n",
+        "{n_frames}",
+        "-a",
+        "0.5",
+        "-t",
+        "{output_interval_s}",
+        "-f",
+        "{impact_file}",
+        "-m",
+        "{material_file}",
+        "-s",
+        "-g"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 1.625,
+      "impact_angle_deg": 0,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 3.634,
+      "impact_angle_deg": 0,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 1,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 1.375,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 1.75,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 2.185,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 2.5,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 4.886,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 3.548,
+      "impact_angle_deg": 45,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 7.934,
+      "impact_angle_deg": 45,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 9.168,
+      "impact_angle_deg": 60,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "moon"
+      },
+      "gamma": 1,
+      "zeta_iron": 0,
+      "v_imp_over_v_esc": 20.5,
+      "impact_angle_deg": 60,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 1.625,
+      "impact_angle_deg": 0,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 3.634,
+      "impact_angle_deg": 0,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 1,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 1.375,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 1.75,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 2.185,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 2.5,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 4.886,
+      "impact_angle_deg": 30,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 3.548,
+      "impact_angle_deg": 45,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 7.934,
+      "impact_angle_deg": 45,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 9.168,
+      "impact_angle_deg": 60,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    },
+    {
+      "m_tot_kg": {
+        "value": 2,
+        "unit": "mars"
+      },
+      "gamma": 1,
+      "zeta_iron": 0.25,
+      "v_imp_over_v_esc": 20.5,
+      "impact_angle_deg": 60,
+      "f_i": 5,
+      "f_t": 50,
+      "n_tot": 1000000
+    }
+  ]
+}

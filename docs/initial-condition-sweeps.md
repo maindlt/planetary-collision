@@ -1,6 +1,6 @@
 # Hydrostatic initial-condition sweeps
 
-`scripts/generate_initial_conditions.py` turns a JSON parameter grid into separate `spheres_ini` runs. It uses Python's standard library only. Every case uses:
+`scripts/generate_initial_conditions.py` turns a JSON parameter grid or explicit case list into separate `spheres_ini` runs. It uses Python's standard library only. Every case uses:
 
 - hydrostatic radial structures (`-H`);
 - SEAGen spherical-shell placement (`-G 2`);
@@ -80,11 +80,13 @@ Sweeps created by an earlier generator are upgraded during their first restart. 
 
 ## Parameter specifications
 
+Supply exactly one top-level input section: `parameters` for a Cartesian grid, or `cases` for an explicit list. Both use the same `paths`, `generation`, and `execution` sections and produce the same output files.
+
 The `parameters` object must contain exactly these names:
 
-- `m_tot_kg`: combined target and projectile mass in kilograms.
+- `m_tot_kg`: combined target and projectile mass; kilograms by default, or the optional mass unit specified below.
 - `gamma`: `M_projectile / M_target`, in `(0, 1]`.
-- `zeta_iron`: iron core mass fraction for both bodies, in `(0, 1)`.
+- `zeta_iron`: iron core mass fraction for both bodies, in `[0, 1)`. Zero gives pure basalt bodies with no iron core; one (pure iron) is not supported by the sweep driver.
 - `v_imp_over_v_esc`: impact velocity at contact in units of mutual escape velocity.
 - `impact_angle_deg`: 0 degrees for head-on through 90 degrees for grazing.
 - `f_i`: initial separation in units of the combined radii; it must be at least 1.
@@ -100,7 +102,82 @@ Each parameter accepts one of four forms:
 {"mode": "log", "minimum": 1.0, "maximum": 8.0, "count": 5}
 ```
 
+### Reference mass units
+
+The Python module defines fixed conversion constants:
+
+| Constant | Mass in kilograms |
+|---|---:|
+| `MOON_MASS_KG` | `7.34579e22` |
+| `MARS_MASS_KG` | `6.41691e23` |
+| `EARTH_MASS_KG` | `5.97217e24` |
+
+Earth and Mars values follow [JPL's Planetary Physical Parameters](https://ssd.jpl.nasa.gov/planets/phys_par.html). The lunar value is obtained from the DE440 lunar gravitational parameter in [JPL's Astrodynamic Parameters](https://ssd.jpl.nasa.gov/astro_par.html), using the [CODATA 2022 gravitational constant](https://physics.nist.gov/cuu/pdf/all.pdf), `6.67430e-11 m^3 kg^-1 s^-2`, and rounded to six significant figures. The associated ephemeris reference is [Park et al. (2021), *The JPL Planetary and Lunar Ephemerides DE440 and DE441*, AJ 161, 105](https://doi.org/10.3847/1538-3881/abd414).
+
+These adopted values are kept fixed for reproducibility. They can be imported when preparing a JSON configuration in Python, for example:
+
+```python
+from scripts.generate_initial_conditions import EARTH_MASS_KG
+
+mass_specification = {"mode": "constant", "value": 2 * EARTH_MASS_KG}
+```
+
+The JSON `m_tot_kg` specification accepts an optional `unit`: `kg`, `moon`, `mars`, or `earth` (lowercase). Omitting it means kilograms, so existing configurations remain valid. Despite the parameter name, input values are interpreted in the selected unit. For example, a combined mass of two Earth masses is:
+
+```json
+"m_tot_kg": {"mode": "constant", "value": 2, "unit": "earth"}
+```
+
+The same field works with all four grid modes:
+
+```json
+"m_tot_kg": {"mode": "list", "values": [1, 2, 5], "unit": "moon"}
+"m_tot_kg": {"mode": "linear", "minimum": 1, "maximum": 3, "count": 3, "unit": "mars"}
+"m_tot_kg": {"mode": "log", "minimum": 0.1, "maximum": 2, "count": 5, "unit": "earth"}
+```
+
+These are separate alternative specifications. One unit applies to the entire mass grid; mixed units within a list are not supported. Other parameters cannot specify a `unit`. Values and endpoints are converted to kilograms before grid expansion, so generated inputs, case identities, manifests, and the case table continue to use kilograms. Resume and extend compare the converted physical parameters, not the input unit label; they still require exactly matching expanded floating-point values for existing cases. JSON values must be numeric; constant names and Python expressions are not evaluated.
+
 The program forms the full Cartesian product of all expanded values. `execution.max_cases` is a required guard against accidentally launching an unexpectedly large sweep.
+
+## Explicit case lists
+
+Use `cases` instead of `parameters` to specify individual collisions without forming a Cartesian product. Each entry produces one case and must contain all eight parameters:
+
+```json
+"cases": [
+  {
+    "m_tot_kg": {"value": 2, "unit": "earth"},
+    "gamma": 0.1,
+    "zeta_iron": 0.3,
+    "v_imp_over_v_esc": 1.5,
+    "impact_angle_deg": 30,
+    "f_i": 5,
+    "f_t": 50,
+    "n_tot": 1000000
+  },
+  {
+    "m_tot_kg": 1e23,
+    "gamma": 0.5,
+    "zeta_iron": 0.25,
+    "v_imp_over_v_esc": 2,
+    "impact_angle_deg": 45,
+    "f_i": 5,
+    "f_t": 50,
+    "n_tot": 1000000
+  }
+]
+```
+
+Mass may be a number in kilograms or an object containing `value` and an optional `unit` (`kg`, `moon`, `mars`, `earth`; default `kg`). The other parameters must be numbers. Grid specifications such as `mode`, `minimum`, or `values` are not accepted inside case entries. All existing physical validation rules apply, including `f_t = 50`.
+
+The list must be non-empty. Unknown or missing parameters, duplicate cases after mass conversion, and lists exceeding `execution.max_cases` are rejected. New case directories follow list order. On restart, case identity depends on the normalized physical parameters rather than list order or input format: `--resume` requires the same case set, and `--extend` requires a strict superset. Existing directory names are retained even if the input list is reordered. An equivalent Cartesian grid and explicit list can therefore be used interchangeably for restart, provided their expanded values match exactly.
+
+A complete two-case configuration is provided in `examples/initial_conditions_cases.json`. Validate it with:
+
+```sh
+python3 scripts/generate_initial_conditions.py examples/initial_conditions_cases.json --dry-run
+```
 
 ## Planned miluphcuda command
 

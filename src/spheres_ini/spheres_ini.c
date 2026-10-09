@@ -427,6 +427,14 @@ int main(int argc, char* argv[])
             memcpy(&mat[MANTLE], &mat[CORE], sizeof(material)); // if there is no actual mantle copy the core material to mat[MANTLE] as dummy
             mat[MANTLE].mat_type = MATTYPEMANTLE;
         }
+        if( ((1.0-C_p_m_des-C_p_s_des) <= eps6*eps6) && ((1.0-C_t_m_des-C_t_s_des) <= eps6*eps6)
+            && ((C_p_m_des > eps6*eps6) || (C_t_m_des > eps6*eps6)) )
+        {
+            // Coreless mantle bodies still need initialized dummy core constants
+            // for zero-mass radius calculations and diagnostic output.
+            memcpy(&mat[CORE], &mat[MANTLE], sizeof(material));
+            mat[CORE].mat_type = MATTYPECORE;
+        }
         if( (C_p_s_des > eps6*eps6) || (C_t_s_des > eps6*eps6) )    // if there is any shell in proj/targ
         {
             readMaterialConfiguration(matfile, &mat[SHELL], weibull_shell);

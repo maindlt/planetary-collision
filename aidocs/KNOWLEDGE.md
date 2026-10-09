@@ -23,7 +23,7 @@ The existing macOS Makefile uses GCC, OpenMP, Python embedding headers/libraries
 
 ## Initial-condition sweep workflow
 
-- `scripts/generate_initial_conditions.py` expands the JSON grid in `examples/initial_conditions_sweep.json` and runs cases sequentially.
+- `scripts/generate_initial_conditions.py` accepts exactly one of a JSON Cartesian `parameters` grid or an explicit `cases` list and runs cases sequentially. Examples are `examples/initial_conditions_sweep.json` and `examples/initial_conditions_cases.json`. Each explicit case requires all eight parameters; mass may be numeric kg or a `{value, unit}` object. Lists reject duplicates after mass conversion. Both formats normalize to the same case dictionaries and share validation, manifests, tables, generation, and restart behavior; ordering and input format are not restart-significant.
 - Its `--silent` option suppresses driver output and handled error messages while preserving per-case `spheres_ini` logs and failure exit status.
 - `--resume` requires the exact stored case set; `--extend` requires a strict superset and retains all old case names. `--retry-failed` is required to rerun cases with a recorded failure.
 - Every planned case is stored up front with a state and attempt count. Atomic `case.json` files are authoritative for completion; incomplete attempt directories are preserved under `_incomplete_attempts/` before rerunning.
@@ -36,7 +36,9 @@ The existing macOS Makefile uses GCC, OpenMP, Python embedding headers/libraries
 - `execution.miluphcuda` is planning-only and must have `enabled: false`. Its editable argument template is rendered per case, printed, stored in both case and sweep metadata, and written as executable `run_miluphcuda.sh`. The script changes into its own case directory and uses relative input paths so the sweep tree can be transferred to a cluster; the generator never runs it.
 
 - `gamma` is the projectile-to-target mass ratio: `M_projectile / M_target`.
+- The sweep module exposes fixed conversion constants `MOON_MASS_KG = 7.34579e22`, `MARS_MASS_KG = 6.41691e23`, and `EARTH_MASS_KG = 5.97217e24`, based on JPL reference data (Moon converted from DE440 GM using CODATA 2022 G). Source citations are in `docs/initial-condition-sweeps.md`. The JSON `m_tot_kg` specification optionally accepts `unit` (`kg`, `moon`, `mars`, `earth`), defaulting to `kg`. Values/endpoints are converted before expansion; case identities, generated inputs, manifests, and tables retain kilograms. One unit applies to the whole mass grid; other parameters reject `unit`.
 - `zeta_iron` is applied identically to both bodies: iron core mass fraction `zeta_iron`, basalt mantle mass fraction `1 - zeta_iron`, and no outer shell.
+- `zeta_iron = 0` is supported for coreless, pure-basalt bodies; the valid range is `[0, 1)`. In `spheres_ini`'s miluphcuda material setup, the unused core record is initialized from the mantle when both bodies are coreless so zero-mass radius calculations do not use uninitialized material constants. Rebuild `spheres_ini` after this source change.
 - Following the nomenclature in Table 1 of Winter et al. (2023), `f_i` is the initial-distance factor and `f_t` is the simulation-time factor. The requested end time is `(f_i + f_t) * (R_projectile + R_target) / v_impact`.
 - The simulation-time factor is fixed at 50 unless the project requirements change.
 - Production hydrostatic initial conditions should use SEAGen spherical-shell particle placement.

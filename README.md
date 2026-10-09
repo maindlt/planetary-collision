@@ -9,6 +9,7 @@ The current source tree contains `spheres_ini`, a C program that generates parti
 - `src/spheres_ini/` — initial-condition generator, example inputs, and material configurations
 - `scripts/generate_initial_conditions.py` — JSON-driven generator for hydrostatic collision sweeps
 - `examples/initial_conditions_sweep.json` — example 60-case parameter sweep
+- `examples/initial_conditions_cases.json` — example explicit list of two collisions
 - `docs/initial-condition-sweeps.md` — sweep configuration and output reference
 - `aidocs/` — current technical context for coding agents
 
@@ -65,6 +66,8 @@ This should produce the executable `src/spheres_ini/spheres_ini`. The build must
 Copy or edit `examples/initial_conditions_sweep.json`. Its paths are resolved relative to the JSON file. In particular, choose a new `paths.output_directory`; a real run stops if that directory already exists.
 
 The example defines a 60-case Cartesian grid. `execution.miluphcuda.enabled` must remain `false`: the generator creates a portable `run_miluphcuda.sh` in every completed case but does not start an SPH simulation.
+
+Alternatively, use `examples/initial_conditions_cases.json` to specify individual collisions in a top-level `cases` list instead of the Cartesian `parameters` grid. Each entry supplies all eight parameters. Mass inputs support kilograms or lunar, Mars, and Earth units; see `docs/initial-condition-sweeps.md` for the syntax. Resume and extend work with either input format.
 
 ### 6. Validate and generate
 

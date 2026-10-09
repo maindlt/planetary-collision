@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a Cartesian sweep of hydrostatic spheres_ini collision setups."""
+"""Generate hydrostatic spheres_ini setups from a Cartesian grid or case list."""
 
 from __future__ import annotations
 
@@ -22,6 +22,21 @@ import subprocess
 import sys
 from typing import Any, Iterable
 
+
+# Adopted reference masses for converting lunar, Mars, and Earth units to kg.
+# Earth and Mars: https://ssd.jpl.nasa.gov/planets/phys_par.html
+# Moon: DE440 GM from https://ssd.jpl.nasa.gov/astro_par.html divided by
+# CODATA 2022 G = 6.67430e-11 m^3 kg^-1 s^-2, rounded to six significant figures.
+# These are fixed conversion values, not exact physical constants.
+MOON_MASS_KG = 7.34579e22
+MARS_MASS_KG = 6.41691e23
+EARTH_MASS_KG = 5.97217e24
+MASS_UNITS_KG = {
+    "kg": 1.0,
+    "moon": MOON_MASS_KG,
+    "mars": MARS_MASS_KG,
+    "earth": EARTH_MASS_KG,
+}
 
 G_SI = 6.6741e-11
 SPHERES_INI_OUTPUT_MODE = 0
@@ -93,6 +108,25 @@ def expand_parameter(name: str, specification: Any) -> list[float]:
         raise ConfigurationError(f"parameters.{name} must be an object")
     mode = specification.get("mode")
     context = f"parameters.{name}"
+    if "unit" in specification and name != "m_tot_kg":
+        raise ConfigurationError(f"{context}.unit is only supported for m_tot_kg")
+    if name == "m_tot_kg":
+        unit = specification.get("unit", "kg")
+        if not isinstance(unit, str) or unit not in MASS_UNITS_KG:
+            raise ConfigurationError(f"{context}.unit must be one of kg, moon, mars, earth")
+        # Normalize endpoints before expansion so all subsequent calculations,
+        # stored parameters, and case identities use kilograms.
+        specification = dict(specification)
+        scale = MASS_UNITS_KG[unit]
+        keys = {"constant": ("value",), "linear": ("minimum", "maximum"),
+                "log": ("minimum", "maximum")}.get(mode, ())
+        for key in keys:
+            specification[key] = _number(specification.get(key), f"{context}.{key}") * scale
+        if mode == "list" and isinstance(specification.get("values"), list):
+            specification["values"] = [
+                _number(value, f"{context}.values") * scale
+                for value in specification["values"]
+            ]
 
     if mode == "constant":
         values = [_number(specification.get("value"), f"{context}.value")]
@@ -140,8 +174,8 @@ def validate_case(case: dict[str, float]) -> None:
         raise ConfigurationError("m_tot_kg must be > 0")
     if not 0 < case["gamma"] <= 1:
         raise ConfigurationError("gamma must be in (0, 1]")
-    if not 0 < case["zeta_iron"] < 1:
-        raise ConfigurationError("zeta_iron must be in (0, 1)")
+    if not 0 <= case["zeta_iron"] < 1:
+        raise ConfigurationError("zeta_iron must be in [0, 1)")
     if case["v_imp_over_v_esc"] <= 0:
         raise ConfigurationError("v_imp_over_v_esc must be > 0")
     if not 0 <= case["impact_angle_deg"] <= 90:
@@ -172,6 +206,38 @@ def expand_cases(parameters: Any) -> list[dict[str, float]]:
     for combination in itertools.product(*grids):
         case = dict(zip(PARAMETER_NAMES, combination, strict=True))
         validate_case(case)
+        cases.append(case)
+    return cases
+
+
+def parse_case_list(specifications: Any) -> list[dict[str, float]]:
+    if not isinstance(specifications, list) or not specifications:
+        raise ConfigurationError("cases must be a non-empty list")
+    cases = []
+    seen = set()
+    for index, specification in enumerate(specifications):
+        context = f"cases[{index}]"
+        if not isinstance(specification, dict) or set(specification) != set(PARAMETER_NAMES):
+            raise ConfigurationError(
+                f"{context} must contain exactly " + ", ".join(PARAMETER_NAMES)
+            )
+        try:
+            case = {}
+            for name in PARAMETER_NAMES:
+                value = specification[name]
+                if name == "m_tot_kg" and isinstance(value, dict):
+                    if "value" not in value or set(value) - {"value", "unit"}:
+                        raise ConfigurationError("m_tot_kg must contain value and optionally unit")
+                    case[name] = expand_parameter(name, {**value, "mode": "constant"})[0]
+                else:
+                    case[name] = _number(value, name)
+            validate_case(case)
+        except ConfigurationError as error:
+            raise ConfigurationError(f"{context}: {error}") from error
+        identity = tuple(case[name] for name in PARAMETER_NAMES)
+        if identity in seen:
+            raise ConfigurationError(f"{context} duplicates an earlier case after mass conversion")
+        seen.add(identity)
         cases.append(case)
     return cases
 
@@ -264,13 +330,13 @@ def load_configuration(config_path: Path) -> tuple[dict[str, Any], list[dict[str
         raise ConfigurationError(f"cannot read {config_path}: {error}") from error
     if not isinstance(config, dict):
         raise ConfigurationError("the JSON root must be an object")
-    required_sections = {"paths", "execution", "parameters"}
-    extra_sections = set(config) - required_sections - {"generation"}
+    required_sections = {"paths", "execution"}
+    extra_sections = set(config) - required_sections - {"generation", "parameters", "cases"}
     missing_sections = required_sections - set(config)
-    if missing_sections or extra_sections:
+    if missing_sections or extra_sections or len({"parameters", "cases"} & set(config)) != 1:
         raise ConfigurationError(
-            "the JSON root must contain paths, execution, and parameters, with "
-            "generation as the only optional section"
+            "the JSON root must contain paths, execution, and exactly one of "
+            "parameters or cases, with generation as the only optional section"
         )
 
     generation = config.get("generation", GENERATION_DEFAULTS.copy())
@@ -310,7 +376,11 @@ def load_configuration(config_path: Path) -> tuple[dict[str, Any], list[dict[str
         raise ConfigurationError("execution.max_cases must be a positive integer")
     _validate_miluphcuda_config(execution["miluphcuda"])
 
-    cases = expand_cases(config["parameters"])
+    cases = (
+        expand_cases(config["parameters"])
+        if "parameters" in config
+        else parse_case_list(config["cases"])
+    )
     if len(cases) > max_cases:
         raise ConfigurationError(
             f"sweep expands to {len(cases)} cases, exceeding max_cases={max_cases}"

@@ -18,6 +18,7 @@
       "n_frames": 100,
       "arguments": [
         "-v",
+        "-H",
         "-I", "rk2_adaptive",
         "-Q", "1e-4",
         "-n", "{n_frames}",

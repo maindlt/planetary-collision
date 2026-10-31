@@ -192,6 +192,10 @@ cd "$(dirname "$0")" && exec miluphcuda ... -f impact.0000 -m material.cfg
 
 Run it manually from a login or batch script only after the appropriate GPU environment and `miluphcuda` build are available.
 
+The supplied example configurations and `runs/moon_mars_cases.json` include `-H` in `execution.miluphcuda.arguments` to enable HDF5 output alongside ASCII. This requires a `miluphcuda` build with `HDF5IO` enabled and the HDF5 libraries installed; see the [upstream documentation](https://christophmschaefer.github.io/miluphcuda/miluphcuda_documentation.pdf). To request HDF5 only, add `-A` as well. Input remains ASCII unless `-X` is explicitly selected.
+
+Changing a configuration does not rewrite previously generated launchers. For an already completed sweep, add `-H` to the existing `run_miluphcuda.sh` commands before launching the simulations. Keep the original JSON for resuming that sweep: changing the planned argument list is rejected by restart compatibility checks.
+
 The `arguments` list is deliberately configurable because available options can depend on how `miluphcuda` was compiled. It supports these placeholders:
 
 - `{case_directory}`
@@ -213,7 +217,7 @@ For example:
     "-t", "{output_interval_s}",
     "-f", "{impact_file}",
     "-m", "{material_file}",
-    "-s", "-g"
+    "-s", "-g", "-H"
   ]
 }
 ```

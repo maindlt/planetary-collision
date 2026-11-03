@@ -7,6 +7,7 @@ The current source tree contains `spheres_ini`, a C program that generates parti
 ## Repository layout
 
 - `src/spheres_ini/` — initial-condition generator, example inputs, and material configurations
+- `src/fast_identify_fragments_and_calc_aggregates/` — CPU fragment/aggregate postprocessing tools; see its [QuickStart](src/fast_identify_fragments_and_calc_aggregates/QuickStart.md)
 - `scripts/generate_initial_conditions.py` — JSON-driven generator for hydrostatic collision sweeps
 - `examples/initial_conditions_sweep.json` — example 60-case parameter sweep
 - `examples/initial_conditions_cases.json` — example explicit list of two collisions

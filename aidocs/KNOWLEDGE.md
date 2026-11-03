@@ -21,6 +21,14 @@ The repository currently contains `spheres_ini`, an initial-condition generator 
 
 The existing macOS Makefile uses GCC, OpenMP, Python embedding headers/libraries, and libconfig. Its Python version and MacPorts paths are currently machine-specific.
 
+## Fragment and aggregate postprocessing
+
+- `src/fast_identify_fragments_and_calc_aggregates/` contains the complete four-file upstream utility directory imported from `christophmschaefer/miluphcuda` at revision `27903bba8c2d963adc610e33ab4d41f2203112da`, plus its root license and local provenance notes. `calc_aggregates.c` has no code changes; line endings were normalized on import. Local changes are by Thomas Maindl, assisted by Codex (OpenAI).
+- `fast_identify_fragments` uses the unweighted mean of included particle smoothing lengths as one global linking length; the comparison remains strict `distance < mean`. Both ASCII and HDF5 (`/sml`, legacy `/hsml` with `-L`) are supported. `-I` excludes a material from the search and mean. Minimum, maximum, mean and included count are always printed to stdout. Invalid included lengths, empty selections and HDF5 count mismatches fail explicitly.
+- This is a global-mean approximation, not local variable-length linking. Fragment output columns remain unchanged. The 250-neighbour capacity is enforced before writes to the neighbour list; traversal-stack allocation includes its inclusive maximum-depth index.
+- Human build/usage instructions, VSC HDF5 setup and input-format details are in the folder's `QuickStart.md`; source revision/license details are in `UPSTREAM.md`. These tools require no CUDA or GPU. Build with `make` in that folder; HDF5 flags use `pkg-config` or explicit `HDF5_CFLAGS`/`HDF5_LIBS` overrides. Generated executables are ignored.
+- Integration tests: `python3 -m unittest discover -s tests -p 'test_fragment_postprocessing.py'`. They build a temporary executable and require a C compiler, HDF5 development libraries, and Python `h5py`. Set `HDF5_CFLAGS`/`HDF5_LIBS` when `pkg-config` cannot locate HDF5; without `h5py`, the tests are explicitly skipped. Optional `FRAGMENT_TEST_CFLAGS` enables sanitizer flags. Tests cover means/constant equivalence, both readers/legacy naming, material exclusion, invalid/empty input, HDF5 size checks, and neighbour-capacity boundaries.
+
 ## Initial-condition sweep workflow
 
 - `scripts/generate_initial_conditions.py` accepts exactly one of a JSON Cartesian `parameters` grid or an explicit `cases` list and runs cases sequentially. Examples are `examples/initial_conditions_sweep.json` and `examples/initial_conditions_cases.json`. Each explicit case requires all eight parameters; mass may be numeric kg or a `{value, unit}` object. Lists reject duplicates after mass conversion. Both formats normalize to the same case dictionaries and share validation, manifests, tables, generation, and restart behavior; ordering and input format are not restart-significant.

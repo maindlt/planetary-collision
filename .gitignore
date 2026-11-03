@@ -3,6 +3,8 @@
 # C build products
 *.o
 /src/spheres_ini/spheres_ini
+/src/fast_identify_fragments_and_calc_aggregates/fast_identify_fragments
+/src/fast_identify_fragments_and_calc_aggregates/calc_aggregates
 
 # Generated initial-condition data
 *.SEAGen

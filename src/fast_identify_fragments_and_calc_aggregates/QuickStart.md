@@ -26,6 +26,9 @@ See `UPSTREAM.md` for provenance and `LICENSE` for the upstream GPL license.
 Purpose
 -------
 
+For a batch of simulation cases and HDF5 snapshots, see the project's
+[sweep postprocessing guide](../../docs/sweep-postprocessing.md).
+
 The toolchain consisting of `fast_identify_fragments` and `calc_aggregates`
 is intended for postprocessing `miluphcuda` SPH simulations.
 It allows to identify spatially connected clumps of SPH particles (_fragments_),

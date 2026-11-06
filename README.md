@@ -9,6 +9,7 @@ The current source tree contains `spheres_ini`, a C program that generates parti
 - `src/spheres_ini/` — initial-condition generator, example inputs, and material configurations
 - `src/fast_identify_fragments_and_calc_aggregates/` — CPU fragment/aggregate postprocessing tools; see its [QuickStart](src/fast_identify_fragments_and_calc_aggregates/QuickStart.md)
 - `scripts/generate_initial_conditions.py` — JSON-driven generator for hydrostatic collision sweeps
+- `scripts/postprocess_sweep.py` — identify fragments and bound aggregates in each HDF5 simulation frame; see [Sweep postprocessing](docs/sweep-postprocessing.md)
 - `examples/initial_conditions_sweep.json` — example 60-case parameter sweep
 - `examples/initial_conditions_cases.json` — example explicit list of two collisions
 - `docs/initial-condition-sweeps.md` — sweep configuration and output reference

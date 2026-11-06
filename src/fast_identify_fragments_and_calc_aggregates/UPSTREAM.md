@@ -28,6 +28,8 @@ Local changes by Thomas Maindl, assisted by Codex (OpenAI):
 - Replace machine-specific HDF5 build paths with configurable `HDF5_CFLAGS` and
   `HDF5_LIBS`, defaulting to `pkg-config`; keep the aggregate tool independent of HDF5.
 - Update the quickstart and add integration tests in the repository's `tests/` folder.
+- Validate material IDs against the requested slot count before indexing the
+  fragment composition arrays.
 
 The tree search, fragment grouping, fragment output columns, and aggregate
 algorithm otherwise retain their upstream behaviour. A global mean is an

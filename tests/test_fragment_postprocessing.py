@@ -1,6 +1,7 @@
-"""Integration tests; require h5py, a C compiler and HDF5 development libraries.
+"""Test the C fragment finder and the HDF5 sweep-to-results workflow.
 
-Set HDF5_CFLAGS/HDF5_LIBS when HDF5 is not available through pkg-config.
+Requires h5py, a C compiler and HDF5 development libraries. Set
+HDF5_CFLAGS/HDF5_LIBS when HDF5 is not available through pkg-config.
 """
 
 import math
@@ -10,6 +11,8 @@ import shlex
 import subprocess
 import tempfile
 import unittest
+
+from scripts import postprocess_sweep
 
 try:
     import h5py
@@ -138,6 +141,91 @@ class FragmentPostprocessingTests(unittest.TestCase):
                 else:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("Maximum number of interaction partner (250) exceeded", result.stderr)
+
+    def test_sweep_runs_both_tools_and_preserves_failed_frame_logs(self):
+        tools = self.executable.parent
+        subprocess.run(
+            shlex.split(os.environ.get("CC", "cc"))
+            + [str(SOURCE / "calc_aggregates.c"), "-lm", "-o", str(tools / "calc_aggregates")],
+            check=True, capture_output=True, text=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            sweep = Path(directory)
+            case = sweep / "case_00001_test"
+            case.mkdir()
+            (case / "case.json").write_text('{"case_name": "case_00001_original"}')
+            (sweep / "case_table.txt").write_text(
+                "status | attempts | case_directory | gamma\n"
+                "-------+----------+----------------+------\n"
+                "complete | 1 | case_00001_original | 1\n"
+                "pending | 0 | case_00002_missing | 0.5\n"
+            )
+            for name, positions, velocity in (
+                ("impact.0000.h5", [0, 0.5, 1, 1.5], [0, 0, 0, 0]),
+                ("impact.0010.h5", [0, 0.5, 10, 10.5], [0, 0, 1, 1]),
+            ):
+                with h5py.File(case / name, "w") as handle:
+                    handle["x"] = [[x, 0, 0] for x in positions]
+                    handle["v"] = [[v, 0, 0] for v in velocity]
+                    for dataset, values in {
+                        "m": [1.0] * 4, "rho": [3000.0] * 4, "e": [1e5] * 4,
+                        "sml": [1, 3, 3, 1], "material_type": [1] * 4,
+                    }.items():
+                        handle[dataset] = values
+            (case / "impact.0002.h5").write_bytes(b"incomplete snapshot")
+            (case / "impact.0000").touch()
+            (case / "unrelated.h5").touch()
+            self.assertEqual(
+                [path.name for path in postprocess_sweep.discover_frames(sweep, [])],
+                ["impact.0000.h5", "impact.0002.h5", "impact.0010.h5"],
+            )
+            self.assertEqual(postprocess_sweep.main([str(sweep), "--tools-dir", str(tools)]), 1)
+            results = sweep / "postprocessing" / case.name
+            for frame, masses in (("impact.0000", [4, 4]), ("impact.0010", [2, 2, 4])):
+                output = results / frame
+                rows = (output / "aggregates.txt").read_text().splitlines()
+                self.assertEqual([float(row.split()[6]) for row in rows], masses)
+                self.assertIn("mean = 2", (output / "fragments.log").read_text())
+                self.assertIn("largest aggregate", (output / "aggregates.log").read_text())
+            failed = results / "impact.0002"
+            self.assertTrue((failed / "fragments.error").stat().st_size)
+            self.assertFalse((failed / "aggregates.txt").exists())
+            self.assertEqual(
+                postprocess_sweep.aggregate_properties(results / "impact.0000", 2)[3:],
+                ["-"] * 3,
+            )
+            table = sweep / "postprocessing" / "results_table.txt"
+            lines = table.read_text().splitlines()
+            headers = [field.strip() for field in lines[0].split("|")]
+            final = dict(zip(headers, (value.strip() for value in lines[2].split("|"))))
+            self.assertNotIn("status", headers)
+            self.assertNotIn("attempts", headers)
+            self.assertEqual(headers[2:], [
+                "final_frame", "largest_mass_kg", "largest_mat0_frac", "largest_mat1_frac",
+                "second_mass_kg", "second_mat0_frac", "second_mat1_frac",
+            ])
+            self.assertEqual(final["case_directory"], "case_00001_original")
+            self.assertEqual(final["final_frame"], "impact.0010")
+            self.assertEqual(float(final["largest_mass_kg"]), 2)
+            self.assertEqual(float(final["second_mass_kg"]), 2)
+            self.assertEqual(float(final["second_mat1_frac"]), 1)
+            self.assertEqual(lines[3].split("|")[2].strip(), "-")
+            self.assertEqual(postprocess_sweep.main([str(sweep), "--tools-dir", str(tools)]), 1)
+            table.rename(table.with_suffix(".previous"))
+            # A later snapshot exists, but has no postprocessing result yet.
+            (case / "impact.0011.h5").touch()
+            self.assertEqual(postprocess_sweep.main([
+                str(sweep), "--table-only", "--tools-dir", str(sweep / "unavailable-tools"),
+            ]), 0)
+            rebuilt = table.read_text().splitlines()
+            final = dict(zip(headers, (value.strip() for value in rebuilt[2].split("|"))))
+            self.assertEqual(final["final_frame"], "impact.0011")
+            self.assertEqual(final["largest_mass_kg"], "-")
+
+    def test_out_of_range_material_id_fails_before_fragment_composition(self):
+        result, _ = self.run_finder([1] * 4, hdf5=True, materials=[0, 1, 0, 0])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Material ID 1 is outside the slots", result.stderr)
 
 
 if __name__ == "__main__":

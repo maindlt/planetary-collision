@@ -109,7 +109,7 @@ void usage(char* programname)
     fprintf(stdout, "    -i inputfile     specify miluphcuda outputfile to read from\n");
 //    fprintf(stdout, "    -s               set this flag if the miluphcuda file to read is from a solid run, otherwise it is assumed to be from a hydro run\n");
     fprintf(stdout, "    -o outputfile    specify file to write to\n");
-    fprintf(stdout, "    -m n_materials   specify number of different materials (without the material to ignore - if '-I' is used)\n");
+    fprintf(stdout, "    -m n_materials   specify material slots; must exceed the highest included material ID\n");
     fprintf(stdout, "    -I ignore-mat    specify single material ID which is simply ignored for fragment search\n");
     fprintf(stdout, "    -l filename      optional; set flag and filename to write some metadata, especially the particleindices in the inputfile (linenumbers)\n");
     fprintf(stdout, "                     of particles in all fragments to file (sorted); this doesn't work if '-I' is used!\n");
@@ -565,6 +565,12 @@ int main(int argc, char* argv[])
             fprintf(stdout, "Done.\nFound %d particles.\n", N);
     }
     
+    if( n_mat <= 0 )
+        ERRORTEXT("ERROR! The number of material slots (-m) must be positive.\n")
+    for(i=0; i<N; i++)
+        if( p.mat_types[i] < 0 || p.mat_types[i] >= n_mat )
+            ERRORVAR("ERROR! Material ID %d is outside the slots specified by -m.\n", p.mat_types[i])
+
     if( sml_stats.count != N )
         ERRORTEXT("ERROR! Smoothing-length count does not match included particle count.\n")
     sml = (double)(sml_stats.sum / N);
